@@ -47,6 +47,7 @@ export function createRegistry(): RegistryInternal {
         );
       }
       if (tool.inputSchema !== undefined) {
+        // Only rejects hard-fail serialization (cycles, BigInt); lossy cases (functions, undefined) are not caught.
         try {
           JSON.stringify(tool.inputSchema);
         } catch {

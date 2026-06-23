@@ -95,7 +95,7 @@ describe("createRegistry", () => {
     const registry = createRegistry();
     await expect(
       registry.registerTool(makeTool(), { signal: AbortSignal.abort() }),
-    ).rejects.toBeDefined();
+    ).rejects.toMatchObject({ name: "AbortError" });
     expect(registry.getTools().has("test_tool")).toBe(false);
   });
 

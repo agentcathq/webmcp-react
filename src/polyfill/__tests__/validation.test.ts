@@ -139,4 +139,13 @@ describe("isPotentiallyTrustworthyOrigin", () => {
     expect(isPotentiallyTrustworthyOrigin("http://example.com")).toBe(false);
     expect(isPotentiallyTrustworthyOrigin("not a url")).toBe(false);
   });
+  it("rejects non-bare origins (path, query, or credentials)", () => {
+    expect(isPotentiallyTrustworthyOrigin("https://example.com/path")).toBe(false);
+    expect(isPotentiallyTrustworthyOrigin("https://example.com?x=1")).toBe(false);
+    expect(isPotentiallyTrustworthyOrigin("https://user:pass@example.com")).toBe(false);
+  });
+  it("still accepts a bare https origin and file: urls", () => {
+    expect(isPotentiallyTrustworthyOrigin("https://example.com")).toBe(true);
+    expect(isPotentiallyTrustworthyOrigin("file:///Users/x/page.html")).toBe(true);
+  });
 });

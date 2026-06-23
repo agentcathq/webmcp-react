@@ -13,7 +13,15 @@ export function isPotentiallyTrustworthyOrigin(origin: string): boolean {
   } catch {
     return false;
   }
-  if (url.protocol === "https:" || url.protocol === "wss:" || url.protocol === "file:") {
+  // file: is an intentional allowance; file: URLs have a null origin so check it first.
+  if (url.protocol === "file:") {
+    return true;
+  }
+  // Must be a bare origin — reject inputs carrying a path, query, or credentials.
+  if (url.origin !== origin) {
+    return false;
+  }
+  if (url.protocol === "https:" || url.protocol === "wss:") {
     return true;
   }
   const host = url.hostname;
