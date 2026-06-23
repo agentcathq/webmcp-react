@@ -12,92 +12,119 @@ function makeTool(overrides?: Partial<ToolDescriptor>): ToolDescriptor {
 }
 
 describe("createRegistry", () => {
-  it("registers a tool visible in getTools()", () => {
+  it("registers a tool visible in getTools()", async () => {
     const registry = createRegistry();
-    registry.registerTool(makeTool());
+    await registry.registerTool(makeTool());
     expect(registry.getTools().has("test_tool")).toBe(true);
   });
 
-  it("defaults inputSchema when absent", () => {
+  it("resolves and inserts synchronously on success", async () => {
     const registry = createRegistry();
-    registry.registerTool(makeTool({ inputSchema: undefined }));
+    const p = registry.registerTool(makeTool());
+    expect(registry.getTools().has("test_tool")).toBe(true);
+    await expect(p).resolves.toBeUndefined();
+  });
+
+  it("defaults inputSchema when absent", async () => {
+    const registry = createRegistry();
+    await registry.registerTool(makeTool({ inputSchema: undefined }));
     const stored = registry.getTools().get("test_tool");
     expect(stored?.inputSchema).toEqual({ type: "object", properties: {} });
   });
 
-  it("preserves provided inputSchema", () => {
+  it("preserves provided inputSchema", async () => {
     const registry = createRegistry();
     const schema = {
       type: "object",
       properties: { q: { type: "string" } },
       required: ["q"] as const,
     };
-    registry.registerTool(makeTool({ inputSchema: schema }));
+    await registry.registerTool(makeTool({ inputSchema: schema }));
     const stored = registry.getTools().get("test_tool");
     expect(stored?.inputSchema).toEqual(schema);
   });
 
-  it("throws on duplicate name", () => {
+  it("rejects with InvalidStateError on duplicate name", async () => {
     const registry = createRegistry();
-    registry.registerTool(makeTool());
-    expect(() => registry.registerTool(makeTool())).toThrow(
-      'Tool "test_tool" is already registered',
-    );
+    await registry.registerTool(makeTool());
+    await expect(registry.registerTool(makeTool())).rejects.toMatchObject({
+      name: "InvalidStateError",
+    });
   });
 
-  it("throws on empty name", () => {
+  it("rejects on empty / too-long / illegal name", async () => {
     const registry = createRegistry();
-    expect(() => registry.registerTool(makeTool({ name: "" }))).toThrow(
-      "Tool name must be a non-empty string",
-    );
+    await expect(registry.registerTool(makeTool({ name: "" }))).rejects.toMatchObject({
+      name: "InvalidStateError",
+    });
+    await expect(registry.registerTool(makeTool({ name: "a".repeat(129) }))).rejects.toMatchObject({
+      name: "InvalidStateError",
+    });
+    await expect(registry.registerTool(makeTool({ name: "bad name" }))).rejects.toMatchObject({
+      name: "InvalidStateError",
+    });
   });
 
-  it("throws on empty description", () => {
+  it("rejects on empty description and non-function execute", async () => {
     const registry = createRegistry();
-    expect(() => registry.registerTool(makeTool({ description: "" }))).toThrow(
-      "Tool description must be a non-empty string",
-    );
+    await expect(registry.registerTool(makeTool({ description: "" }))).rejects.toMatchObject({
+      name: "InvalidStateError",
+    });
+    await expect(
+      registry.registerTool(makeTool({ execute: "x" as unknown as ToolDescriptor["execute"] })),
+    ).rejects.toMatchObject({ name: "InvalidStateError" });
   });
 
-  it("throws on non-function execute", () => {
+  it("rejects on non-serializable inputSchema with TypeError", async () => {
     const registry = createRegistry();
-    expect(() =>
-      registry.registerTool(
-        makeTool({ execute: "not a function" as unknown as ToolDescriptor["execute"] }),
-      ),
-    ).toThrow("Tool execute must be a function");
+    const circular: Record<string, unknown> = { type: "object" };
+    circular.self = circular;
+    await expect(
+      registry.registerTool(makeTool({ inputSchema: circular as never })),
+    ).rejects.toBeInstanceOf(TypeError);
   });
 
-  it("throws DOMException with InvalidStateError name", () => {
+  it("rejects on a non-trustworthy exposedTo origin with SecurityError", async () => {
     const registry = createRegistry();
-    try {
-      registry.registerTool(makeTool({ name: "" }));
-    } catch (e) {
-      expect(e).toBeInstanceOf(DOMException);
-      expect((e as DOMException).name).toBe("InvalidStateError");
-    }
+    await expect(
+      registry.registerTool(makeTool(), { exposedTo: ["http://evil.example"] }),
+    ).rejects.toMatchObject({ name: "SecurityError" });
   });
 
-  it("unregisters a tool", () => {
+  it("rejects when the signal is already aborted", async () => {
     const registry = createRegistry();
-    registry.registerTool(makeTool());
-    registry.unregisterTool("test_tool");
+    await expect(
+      registry.registerTool(makeTool(), { signal: AbortSignal.abort() }),
+    ).rejects.toMatchObject({ name: "AbortError" });
     expect(registry.getTools().has("test_tool")).toBe(false);
   });
 
-  it("unregisterTool no-ops for unknown name", () => {
+  it("fans out to multiple listeners and supports unsubscribe", async () => {
     const registry = createRegistry();
-    expect(() => registry.unregisterTool("nonexistent")).not.toThrow();
+    const a = vi.fn();
+    const b = vi.fn();
+    const offA = registry.addChangeListener(a);
+    registry.addChangeListener(b);
+    await registry.registerTool(makeTool());
+    await Promise.resolve();
+    expect(a).toHaveBeenCalledTimes(1);
+    expect(b).toHaveBeenCalledTimes(1);
+    offA();
+    await registry.registerTool(makeTool({ name: "second" }));
+    await Promise.resolve();
+    expect(a).toHaveBeenCalledTimes(1);
+    expect(b).toHaveBeenCalledTimes(2);
   });
 
   it("batches rapid registrations into one notification", async () => {
     const registry = createRegistry();
     const cb = vi.fn();
-    registry.onToolsChanged(cb);
+    registry.addChangeListener(cb);
 
-    registry.registerTool(makeTool({ name: "a" }));
-    registry.registerTool(makeTool({ name: "b" }));
-    registry.registerTool(makeTool({ name: "c" }));
+    // Synchronous insert; the notification is deferred to a microtask.
+    void registry.registerTool(makeTool({ name: "a" }));
+    void registry.registerTool(makeTool({ name: "b" }));
+    void registry.registerTool(makeTool({ name: "c" }));
 
     expect(cb).not.toHaveBeenCalled();
     await Promise.resolve();
@@ -107,18 +134,18 @@ describe("createRegistry", () => {
   it("fires notification after microtask for single registration", async () => {
     const registry = createRegistry();
     const cb = vi.fn();
-    registry.onToolsChanged(cb);
+    registry.addChangeListener(cb);
 
-    registry.registerTool(makeTool());
+    void registry.registerTool(makeTool());
     expect(cb).not.toHaveBeenCalled();
     await Promise.resolve();
     expect(cb).toHaveBeenCalledTimes(1);
   });
 
-  it("stores a shallow copy isolated from the original object", () => {
+  it("stores a shallow copy isolated from the original object", async () => {
     const registry = createRegistry();
     const tool = makeTool();
-    registry.registerTool(tool);
+    await registry.registerTool(tool);
 
     (tool as Record<string, unknown>).description = "mutated";
     const stored = registry.getTools().get("test_tool");
@@ -129,10 +156,10 @@ describe("createRegistry", () => {
     it("removes tool when abort signal fires", async () => {
       const registry = createRegistry();
       const cb = vi.fn();
-      registry.onToolsChanged(cb);
+      registry.addChangeListener(cb);
 
       const controller = new AbortController();
-      registry.registerTool(makeTool(), { signal: controller.signal });
+      await registry.registerTool(makeTool(), { signal: controller.signal });
       expect(registry.getTools().has("test_tool")).toBe(true);
 
       await Promise.resolve();
@@ -145,40 +172,13 @@ describe("createRegistry", () => {
       expect(cb).toHaveBeenCalledTimes(2);
     });
 
-    it("skips registration when signal is already aborted", () => {
-      const registry = createRegistry();
-      registry.registerTool(makeTool(), { signal: AbortSignal.abort() });
-      expect(registry.getTools().has("test_tool")).toBe(false);
-    });
-
-    it("abort after manual unregisterTool is a safe no-op", async () => {
-      const registry = createRegistry();
-      const cb = vi.fn();
-      registry.onToolsChanged(cb);
-
-      const controller = new AbortController();
-      registry.registerTool(makeTool(), { signal: controller.signal });
-
-      await Promise.resolve();
-      expect(cb).toHaveBeenCalledTimes(1);
-
-      registry.unregisterTool("test_tool");
-      await Promise.resolve();
-      expect(cb).toHaveBeenCalledTimes(2);
-
-      controller.abort();
-      await Promise.resolve();
-      // no extra notification — tool was already removed
-      expect(cb).toHaveBeenCalledTimes(2);
-    });
-
     it("fires notification via microtask when abort removes a tool", async () => {
       const registry = createRegistry();
       const cb = vi.fn();
-      registry.onToolsChanged(cb);
+      registry.addChangeListener(cb);
 
       const controller = new AbortController();
-      registry.registerTool(makeTool(), { signal: controller.signal });
+      await registry.registerTool(makeTool(), { signal: controller.signal });
       await Promise.resolve();
 
       controller.abort();
@@ -191,24 +191,25 @@ describe("createRegistry", () => {
     it("stale abort does not remove a same-name re-registration", async () => {
       const registry = createRegistry();
       const cb = vi.fn();
-      registry.onToolsChanged(cb);
+      registry.addChangeListener(cb);
 
       const controller1 = new AbortController();
-      registry.registerTool(makeTool(), { signal: controller1.signal });
+      await registry.registerTool(makeTool(), { signal: controller1.signal });
       await Promise.resolve();
       expect(cb).toHaveBeenCalledTimes(1);
 
-      // Unregister, then re-register with a new signal
-      registry.unregisterTool("test_tool");
+      // Abort the first registration, then re-register with a new signal
+      controller1.abort();
       await Promise.resolve();
       expect(cb).toHaveBeenCalledTimes(2);
+      expect(registry.getTools().has("test_tool")).toBe(false);
 
       const controller2 = new AbortController();
-      registry.registerTool(makeTool(), { signal: controller2.signal });
+      await registry.registerTool(makeTool(), { signal: controller2.signal });
       await Promise.resolve();
       expect(cb).toHaveBeenCalledTimes(3);
 
-      // Abort the OLD signal — should NOT remove the new registration
+      // Abort the OLD signal again — should NOT remove the new registration
       controller1.abort();
       await Promise.resolve();
       expect(registry.getTools().has("test_tool")).toBe(true);

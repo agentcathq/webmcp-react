@@ -30,7 +30,7 @@ function WebMCPProvider({ name, version, children }: WebMCPProviderProps) {
 
   useEffect(() => {
     const hasNativeApi =
-      !!navigator.modelContext && !("__isWebMCPPolyfill" in navigator.modelContext);
+      !!document.modelContext && !("__isWebMCPPolyfill" in document.modelContext);
 
     if (!hasNativeApi) {
       installPolyfill();
@@ -38,7 +38,7 @@ function WebMCPProvider({ name, version, children }: WebMCPProviderProps) {
       polyfillConsumerCount++;
     }
 
-    setAvailable(!!navigator.modelContext);
+    setAvailable(!!document.modelContext);
 
     return () => {
       if (usesPolyfillRef.current) {

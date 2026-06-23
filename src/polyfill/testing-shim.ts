@@ -1,12 +1,9 @@
-import type {
-  ModelContextClient,
-  ModelContextTesting,
-  ModelContextTestingExecuteToolOptions,
-} from "../types";
+import type { ModelContextTesting, ModelContextTestingExecuteToolOptions } from "../types";
 import type { RegistryInternal } from "./registry";
 import { validateArgs } from "./validation";
 
 export function createTestingShim(registry: RegistryInternal): ModelContextTesting {
+  let offChange: (() => void) | null = null;
   return {
     listTools() {
       return Array.from(registry.getTools().values()).map((tool) => ({
@@ -45,19 +42,6 @@ export function createTestingShim(registry: RegistryInternal): ModelContextTesti
         validateArgs(parsed as Record<string, unknown>, tool.inputSchema);
       }
 
-      let contextActive = true;
-      const client: ModelContextClient = {
-        requestUserInteraction(callback) {
-          if (!contextActive) {
-            throw new DOMException(
-              "Tool execution context is no longer active",
-              "InvalidStateError",
-            );
-          }
-          return callback();
-        },
-      };
-
       const signal = options?.signal;
       let onAbort: (() => void) | undefined;
       let abortPromise: Promise<never> | undefined;
@@ -76,9 +60,7 @@ export function createTestingShim(registry: RegistryInternal): ModelContextTesti
       }
 
       try {
-        const resultPromise = Promise.resolve(
-          tool.execute(parsed as Record<string, unknown>, client),
-        );
+        const resultPromise = Promise.resolve(tool.execute(parsed as Record<string, unknown>));
 
         const result = abortPromise
           ? await Promise.race([abortPromise, resultPromise])
@@ -86,7 +68,6 @@ export function createTestingShim(registry: RegistryInternal): ModelContextTesti
 
         return JSON.stringify(result);
       } finally {
-        contextActive = false;
         if (onAbort && signal) {
           signal.removeEventListener("abort", onAbort);
         }
@@ -94,7 +75,8 @@ export function createTestingShim(registry: RegistryInternal): ModelContextTesti
     },
 
     registerToolsChangedCallback(callback: () => void) {
-      registry.onToolsChanged(callback);
+      offChange?.();
+      offChange = registry.addChangeListener(callback);
     },
 
     getCrossDocumentScriptToolResult() {

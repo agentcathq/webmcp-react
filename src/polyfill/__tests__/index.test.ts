@@ -7,9 +7,12 @@ describe("installPolyfill / cleanupPolyfill", () => {
     cleanupPolyfill();
   });
 
-  it("installPolyfill creates navigator.modelContext", () => {
+  it("installPolyfill creates document.modelContext", () => {
     installPolyfill();
-    expect(navigator.modelContext).toBeDefined();
+    expect(document.modelContext).toBeDefined();
+    expect((document.modelContext as unknown as Record<string, unknown>).__isWebMCPPolyfill).toBe(
+      true,
+    );
   });
 
   it("installPolyfill creates navigator.modelContextTesting", () => {
@@ -19,24 +22,35 @@ describe("installPolyfill / cleanupPolyfill", () => {
 
   it("modelContext has __isWebMCPPolyfill marker", () => {
     installPolyfill();
-    expect((navigator.modelContext as Record<string, unknown>).__isWebMCPPolyfill).toBe(true);
+    expect((document.modelContext as unknown as Record<string, unknown>).__isWebMCPPolyfill).toBe(
+      true,
+    );
   });
 
   it("installPolyfill is idempotent", () => {
     installPolyfill();
-    const first = navigator.modelContext;
+    const first = document.modelContext;
     const firstTesting = navigator.modelContextTesting;
     installPolyfill();
-    expect(navigator.modelContext).toBe(first);
+    expect(document.modelContext).toBe(first);
     expect(navigator.modelContextTesting).toBe(firstTesting);
+  });
+
+  it("does not install when native document.modelContext exists", () => {
+    const native = { registerTool: () => Promise.resolve(undefined) };
+    Object.defineProperty(document, "modelContext", { value: native, configurable: true });
+    installPolyfill();
+    expect(document.modelContext).toBe(native);
+    delete (document as { modelContext?: unknown }).modelContext;
   });
 
   it("installPolyfill skips when native API exists", () => {
     const native = {
-      registerTool() {},
-      unregisterTool() {},
+      registerTool() {
+        return Promise.resolve(undefined);
+      },
     };
-    Object.defineProperty(navigator, "modelContext", {
+    Object.defineProperty(document, "modelContext", {
       value: native,
       configurable: true,
       enumerable: true,
@@ -44,36 +58,37 @@ describe("installPolyfill / cleanupPolyfill", () => {
     });
 
     installPolyfill();
-    expect(navigator.modelContext).toBe(native);
+    expect(document.modelContext).toBe(native);
 
     // Manual cleanup since our polyfill wasn't installed
-    Object.defineProperty(navigator, "modelContext", {
+    Object.defineProperty(document, "modelContext", {
       value: undefined,
       configurable: true,
       writable: true,
     });
-    delete navigator.modelContext;
+    delete (document as { modelContext?: unknown }).modelContext;
   });
 
-  it("navigator.modelContext is not writable", () => {
+  it("document.modelContext is not writable", () => {
     installPolyfill();
-    const desc = Object.getOwnPropertyDescriptor(navigator, "modelContext");
+    const desc = Object.getOwnPropertyDescriptor(document, "modelContext");
     expect(desc?.writable).toBe(false);
   });
 
   it("cleanupPolyfill removes polyfill properties", () => {
     installPolyfill();
     cleanupPolyfill();
-    expect(navigator.modelContext).toBeUndefined();
+    expect(document.modelContext).toBeUndefined();
     expect(navigator.modelContextTesting).toBeUndefined();
   });
 
   it("cleanupPolyfill restores previous property descriptors", () => {
     const original = {
-      registerTool() {},
-      unregisterTool() {},
+      registerTool() {
+        return Promise.resolve(undefined);
+      },
     };
-    Object.defineProperty(navigator, "modelContext", {
+    Object.defineProperty(document, "modelContext", {
       value: original,
       configurable: true,
       enumerable: true,
@@ -84,18 +99,18 @@ describe("installPolyfill / cleanupPolyfill", () => {
     (original as Record<string, unknown>).__isWebMCPPolyfill = true;
 
     installPolyfill();
-    expect(navigator.modelContext).not.toBe(original);
+    expect(document.modelContext).not.toBe(original);
 
     cleanupPolyfill();
-    expect(navigator.modelContext).toBe(original);
+    expect(document.modelContext).toBe(original);
 
     // Final cleanup
-    Object.defineProperty(navigator, "modelContext", {
+    Object.defineProperty(document, "modelContext", {
       value: undefined,
       configurable: true,
       writable: true,
     });
-    delete navigator.modelContext;
+    delete (document as { modelContext?: unknown }).modelContext;
   });
 
   it("cleanupPolyfill restores previous modelContextTesting descriptor", () => {
@@ -129,7 +144,7 @@ describe("installPolyfill / cleanupPolyfill", () => {
 
   it("cleanupPolyfill is no-op when not installed", () => {
     expect(() => cleanupPolyfill()).not.toThrow();
-    expect(navigator.modelContext).toBeUndefined();
+    expect(document.modelContext).toBeUndefined();
   });
 
   it("full lifecycle: install → register tool → execute via testing shim → cleanup", async () => {
@@ -148,7 +163,7 @@ describe("installPolyfill / cleanupPolyfill", () => {
       }),
     };
 
-    const mc = navigator.modelContext as NonNullable<typeof navigator.modelContext>;
+    const mc = document.modelContext as NonNullable<typeof document.modelContext>;
     mc.registerTool(tool);
 
     const testing = navigator.modelContextTesting as NonNullable<
@@ -164,7 +179,7 @@ describe("installPolyfill / cleanupPolyfill", () => {
     });
 
     cleanupPolyfill();
-    expect(navigator.modelContext).toBeUndefined();
+    expect(document.modelContext).toBeUndefined();
     expect(navigator.modelContextTesting).toBeUndefined();
   });
 });

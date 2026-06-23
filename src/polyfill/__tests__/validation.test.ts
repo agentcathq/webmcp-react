@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { InputSchema } from "../../types";
-import { validateArgs } from "../validation";
+import { isPotentiallyTrustworthyOrigin, isValidToolName, validateArgs } from "../validation";
 
 const schema: InputSchema = {
   type: "object",
@@ -111,5 +111,41 @@ describe("validateArgs", () => {
   it("works with empty schema", () => {
     const s: InputSchema = { type: "object" };
     expect(() => validateArgs({ anything: true }, s)).not.toThrow();
+  });
+});
+
+describe("isValidToolName", () => {
+  it("accepts snake_case, dot, and dash within 1-128 chars", () => {
+    expect(isValidToolName("search_catalog")).toBe(true);
+    expect(isValidToolName("a.b-c_1")).toBe(true);
+    expect(isValidToolName("a".repeat(128))).toBe(true);
+  });
+  it("rejects empty, over-128, and illegal characters", () => {
+    expect(isValidToolName("")).toBe(false);
+    expect(isValidToolName("a".repeat(129))).toBe(false);
+    expect(isValidToolName("has space")).toBe(false);
+    expect(isValidToolName("emoji😀")).toBe(false);
+  });
+});
+
+describe("isPotentiallyTrustworthyOrigin", () => {
+  it("accepts https, wss, file, and localhost", () => {
+    expect(isPotentiallyTrustworthyOrigin("https://example.com")).toBe(true);
+    expect(isPotentiallyTrustworthyOrigin("wss://example.com")).toBe(true);
+    expect(isPotentiallyTrustworthyOrigin("http://localhost")).toBe(true);
+    expect(isPotentiallyTrustworthyOrigin("http://127.0.0.1")).toBe(true);
+  });
+  it("rejects insecure http origins and unparseable strings", () => {
+    expect(isPotentiallyTrustworthyOrigin("http://example.com")).toBe(false);
+    expect(isPotentiallyTrustworthyOrigin("not a url")).toBe(false);
+  });
+  it("rejects non-bare origins (path, query, or credentials)", () => {
+    expect(isPotentiallyTrustworthyOrigin("https://example.com/path")).toBe(false);
+    expect(isPotentiallyTrustworthyOrigin("https://example.com?x=1")).toBe(false);
+    expect(isPotentiallyTrustworthyOrigin("https://user:pass@example.com")).toBe(false);
+  });
+  it("still accepts a bare https origin and file: urls", () => {
+    expect(isPotentiallyTrustworthyOrigin("https://example.com")).toBe(true);
+    expect(isPotentiallyTrustworthyOrigin("file:///Users/x/page.html")).toBe(true);
   });
 });

@@ -5,7 +5,6 @@ import type {
   CallToolResult,
   McpToolConfigJsonSchema,
   McpToolConfigZod,
-  ModelContextClient,
   ToolDescriptor,
   ToolExecutionState,
   UseMcpToolReturn,
@@ -92,11 +91,7 @@ export function useMcpTool(
         );
       }
 
-      const client: ModelContextClient = {
-        requestUserInteraction: (callback) => callback(),
-      };
-
-      const result = await handlerRef.current(validatedInput as Record<string, unknown>, client);
+      const result = await handlerRef.current(validatedInput as Record<string, unknown>);
 
       if (isMountedRef.current) {
         inFlightCountRef.current--;
@@ -137,11 +132,11 @@ export function useMcpTool(
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: schema objects are tracked via fingerprints, handler/callbacks via refs
   useEffect(() => {
-    if (typeof navigator === "undefined" || !navigator.modelContext) {
+    if (typeof document === "undefined" || !document.modelContext) {
       return;
     }
 
-    const mc = navigator.modelContext;
+    const mc = document.modelContext;
     const cfg = configRef.current;
     const ownerToken = Symbol(cfg.name);
     const zodPath = "input" in cfg && cfg.input instanceof z.ZodObject;
@@ -164,10 +159,7 @@ export function useMcpTool(
       ...(resolvedInputSchema && { inputSchema: resolvedInputSchema }),
       ...(resolvedOutputSchema && { outputSchema: resolvedOutputSchema }),
       ...(cfg.annotations && { annotations: cfg.annotations }),
-      execute: async (
-        args: Record<string, unknown>,
-        client: ModelContextClient,
-      ): Promise<CallToolResult> => {
+      execute: async (args: Record<string, unknown>): Promise<CallToolResult> => {
         inFlightCountRef.current++;
         if (isMountedRef.current) {
           setState((prev) => ({ ...prev, isExecuting: true, error: null }));
@@ -183,7 +175,7 @@ export function useMcpTool(
             validatedArgs = (currentConfig as McpToolConfigZod<z.ZodRawShape>).input.parse(args);
           }
 
-          const result = await handlerRef.current(validatedArgs as Record<string, unknown>, client);
+          const result = await handlerRef.current(validatedArgs as Record<string, unknown>);
 
           if (isMountedRef.current) {
             inFlightCountRef.current--;
@@ -225,16 +217,12 @@ export function useMcpTool(
 
     const controller = new AbortController();
 
-    try {
-      mc.registerTool(descriptor, { signal: controller.signal });
-    } catch (err) {
+    mc.registerTool(descriptor, { signal: controller.signal }).catch((err) => {
       warnOnce(
         `register-${cfg.name}`,
         `Failed to register tool "${cfg.name}": ${err instanceof Error ? err.message : String(err)}`,
       );
-      return;
-    }
-
+    });
     TOOL_OWNER_BY_NAME.set(cfg.name, ownerToken);
 
     return () => {
@@ -243,7 +231,6 @@ export function useMcpTool(
         return;
       }
       TOOL_OWNER_BY_NAME.delete(cfg.name);
-      mc.unregisterTool?.(cfg.name);
       controller.abort();
     };
   }, [

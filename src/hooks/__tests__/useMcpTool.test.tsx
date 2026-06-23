@@ -153,7 +153,7 @@ describe("registration lifecycle", () => {
 
     // listTools() only returns name/description/inputSchema, so spy on registerTool
     // and trigger re-registration by changing description.
-    const mc = navigator.modelContext;
+    const mc = document.modelContext;
     expect(mc).toBeDefined();
     const spy = vi.spyOn(mc as NonNullable<typeof mc>, "registerTool");
 
@@ -185,7 +185,7 @@ describe("registration lifecycle", () => {
     expect(descriptor.outputSchema?.properties?.greeting).toBeDefined();
   });
 
-  it("unregisters tool on unmount", async () => {
+  it("removes tool on unmount", async () => {
     const { unmount } = renderWithProvider(
       <ToolComponent
         config={{
@@ -203,14 +203,9 @@ describe("registration lifecycle", () => {
     await waitForRegistration();
     expect(navigator.modelContextTesting?.listTools()).toHaveLength(1);
 
-    // Spy before unmount — provider cleanup will remove the polyfill
-    const mc = navigator.modelContext;
-    expect(mc).toBeDefined();
-    const spy = vi.spyOn(mc as NonNullable<typeof mc>, "unregisterTool");
-
     unmount();
 
-    expect(spy).toHaveBeenCalledWith("greet");
+    await waitFor(() => expect(navigator.modelContextTesting?.listTools() ?? []).toHaveLength(0));
   });
 
   it("re-registers when description changes", async () => {
@@ -235,7 +230,7 @@ describe("registration lifecycle", () => {
 
     await waitForRegistration();
 
-    const mc = navigator.modelContext;
+    const mc = document.modelContext;
     expect(mc).toBeDefined();
     const spy = vi.spyOn(mc as NonNullable<typeof mc>, "registerTool");
 
@@ -281,7 +276,7 @@ describe("registration lifecycle", () => {
 
     await waitForRegistration();
 
-    const mc = navigator.modelContext;
+    const mc = document.modelContext;
     expect(mc).toBeDefined();
     const spy = vi.spyOn(mc as NonNullable<typeof mc>, "registerTool");
 
@@ -327,7 +322,7 @@ describe("registration lifecycle", () => {
 
     await waitForRegistration();
 
-    const mc = navigator.modelContext;
+    const mc = document.modelContext;
     expect(mc).toBeDefined();
     const spy = vi.spyOn(mc as NonNullable<typeof mc>, "registerTool");
 
@@ -375,7 +370,7 @@ describe("registration lifecycle", () => {
 
     await waitForRegistration();
 
-    const mc = navigator.modelContext;
+    const mc = document.modelContext;
     expect(mc).toBeDefined();
     const spy = vi.spyOn(mc as NonNullable<typeof mc>, "registerTool");
 
@@ -419,7 +414,7 @@ describe("registration lifecycle", () => {
 
     await waitForRegistration();
 
-    const mc = navigator.modelContext;
+    const mc = document.modelContext;
     expect(mc).toBeDefined();
     const spy = vi.spyOn(mc as NonNullable<typeof mc>, "registerTool");
 
@@ -463,7 +458,7 @@ describe("registration lifecycle", () => {
 
     await waitForRegistration();
 
-    const mc = navigator.modelContext;
+    const mc = document.modelContext;
     expect(mc).toBeDefined();
     const spy = vi.spyOn(mc as NonNullable<typeof mc>, "registerTool");
 
@@ -546,7 +541,7 @@ describe("Strict Mode safety", () => {
     expect(result.content[0].text).toBe("hello world");
   });
 
-  it("tool unregistered on real unmount in Strict Mode", async () => {
+  it("tool removed on real unmount in Strict Mode", async () => {
     const { unmount } = render(
       <StrictMode>
         <WebMCPProvider name="test" version="1.0">
@@ -565,13 +560,9 @@ describe("Strict Mode safety", () => {
     await waitForRegistration();
     expect(navigator.modelContextTesting?.listTools()).toHaveLength(1);
 
-    const mc = navigator.modelContext;
-    expect(mc).toBeDefined();
-    const spy = vi.spyOn(mc as NonNullable<typeof mc>, "unregisterTool");
-
     unmount();
 
-    expect(spy).toHaveBeenCalledWith("greet");
+    await waitFor(() => expect(navigator.modelContextTesting?.listTools() ?? []).toHaveLength(0));
   });
 });
 
@@ -989,9 +980,9 @@ describe("SSR safety", () => {
   it("registration effect does not fire during SSR", () => {
     // During SSR, typeof navigator is "undefined" in Node, but jsdom provides it.
     // Verify no tool is registered synchronously during renderToString.
-    // After renderToString, navigator.modelContext should not exist (no provider effect ran).
-    const prevMc = navigator.modelContext;
-    delete navigator.modelContext;
+    // After renderToString, document.modelContext should not exist (no provider effect ran).
+    const prevMc = document.modelContext;
+    delete document.modelContext;
 
     try {
       renderToString(
@@ -1007,10 +998,10 @@ describe("SSR safety", () => {
       );
 
       // No modelContext should exist — effects don't run during renderToString
-      expect(navigator.modelContext).toBeUndefined();
+      expect(document.modelContext).toBeUndefined();
     } finally {
       if (prevMc) {
-        Object.defineProperty(navigator, "modelContext", {
+        Object.defineProperty(document, "modelContext", {
           value: prevMc,
           configurable: true,
           enumerable: true,
@@ -1093,7 +1084,7 @@ describe("provider warning", () => {
 
 // ─── Signal-only native API (Chrome 148+) ────────────────────────
 
-describe("signal-only native API (no unregisterTool)", () => {
+describe("signal-only native API (Chrome 148+)", () => {
   type ToolEntry = { name: string; abortCleanup: () => void };
 
   function installSignalOnlyNative() {
@@ -1114,11 +1105,11 @@ describe("signal-only native API (no unregisterTool)", () => {
           opts.signal.addEventListener("abort", handler, { once: true });
           entry.abortCleanup = () => opts.signal?.removeEventListener("abort", handler);
         }
+        return Promise.resolve(undefined);
       },
-      // no unregisterTool — simulates Chrome 148+
     };
 
-    Object.defineProperty(navigator, "modelContext", {
+    Object.defineProperty(document, "modelContext", {
       value: native,
       configurable: true,
       enumerable: true,
@@ -1129,14 +1120,14 @@ describe("signal-only native API (no unregisterTool)", () => {
   }
 
   function deleteModelContext() {
-    const desc = Object.getOwnPropertyDescriptor(navigator, "modelContext");
+    const desc = Object.getOwnPropertyDescriptor(document, "modelContext");
     if (desc) {
-      Object.defineProperty(navigator, "modelContext", {
+      Object.defineProperty(document, "modelContext", {
         value: undefined,
         configurable: true,
         writable: true,
       });
-      delete navigator.modelContext;
+      delete document.modelContext;
     }
   }
 
@@ -1192,7 +1183,7 @@ describe("signal-only native API (no unregisterTool)", () => {
   it("re-registers with fresh signal on prop change", async () => {
     const registered = installSignalOnlyNative();
     const registerSpy = vi.spyOn(
-      navigator.modelContext as NonNullable<typeof navigator.modelContext>,
+      document.modelContext as NonNullable<typeof document.modelContext>,
       "registerTool",
     );
 
