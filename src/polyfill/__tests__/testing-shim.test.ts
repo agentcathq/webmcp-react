@@ -53,7 +53,7 @@ describe("createTestingShim", () => {
   });
 
   describe("executeTool", () => {
-    it("calls handler with parsed args and client", async () => {
+    it("calls handler with parsed args", async () => {
       const handler = vi.fn(async () => makeResult());
       const { shim } = setup([makeTool({ execute: handler })]);
 
@@ -61,7 +61,22 @@ describe("createTestingShim", () => {
 
       expect(handler).toHaveBeenCalledTimes(1);
       expect(handler.mock.calls[0][0]).toEqual({ query: "hello" });
-      expect(handler.mock.calls[0][1]).toHaveProperty("requestUserInteraction");
+    });
+
+    it("calls execute with a single input argument (no client)", async () => {
+      const registry = createRegistry();
+      const shim = createTestingShim(registry);
+      let argCount = -1;
+      await registry.registerTool({
+        name: "arity_tool",
+        description: "checks arity",
+        execute: (...args: unknown[]) => {
+          argCount = args.length;
+          return { content: [{ type: "text", text: "ok" }] };
+        },
+      });
+      await shim.executeTool("arity_tool", "{}");
+      expect(argCount).toBe(1);
     });
 
     it("returns stringified CallToolResult", async () => {
@@ -194,41 +209,6 @@ describe("createTestingShim", () => {
       await expect(
         shim.executeTool("test_tool", '{"query":"x"}', { signal: controller.signal }),
       ).rejects.toThrow(expect.objectContaining({ name: "AbortError" }));
-    });
-  });
-
-  describe("requestUserInteraction", () => {
-    it("works during execution", async () => {
-      let interactionResult: unknown;
-      const { shim } = setup([
-        makeTool({
-          execute: async (_args, client) => {
-            interactionResult = await client.requestUserInteraction(async () => "user said yes");
-            return makeResult();
-          },
-        }),
-      ]);
-
-      await shim.executeTool("test_tool", '{"query":"x"}');
-      expect(interactionResult).toBe("user said yes");
-    });
-
-    it("throws InvalidStateError after execution completes", async () => {
-      let savedClient: { requestUserInteraction: (cb: () => Promise<unknown>) => Promise<unknown> };
-      const { shim } = setup([
-        makeTool({
-          execute: async (_args, client) => {
-            savedClient = client;
-            return makeResult();
-          },
-        }),
-      ]);
-
-      await shim.executeTool("test_tool", '{"query":"x"}');
-
-      expect(() => savedClient.requestUserInteraction(async () => "late")).toThrow(
-        expect.objectContaining({ name: "InvalidStateError" }),
-      );
     });
   });
 

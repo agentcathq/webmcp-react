@@ -70,17 +70,13 @@ export interface ToolAnnotations {
   openWorldHint?: boolean;
 }
 
-export interface ModelContextClient {
-  requestUserInteraction(callback: () => Promise<unknown>): Promise<unknown>;
-}
-
 export interface ToolDescriptor<TArgs = Record<string, unknown>> {
   name: string;
   description: string;
   inputSchema?: InputSchema;
   outputSchema?: InputSchema;
   annotations?: ToolAnnotations;
-  execute: (args: TArgs, client: ModelContextClient) => MaybePromise<CallToolResult>;
+  execute: (input: TArgs) => MaybePromise<CallToolResult>;
 }
 
 interface McpToolConfigBase {
@@ -96,10 +92,7 @@ export interface McpToolConfigZod<T extends z.ZodRawShape> extends McpToolConfig
   inputSchema?: never;
   output?: z.ZodObject<z.ZodRawShape>;
   outputSchema?: never;
-  handler: (
-    args: z.infer<z.ZodObject<T>>,
-    client: ModelContextClient,
-  ) => MaybePromise<CallToolResult>;
+  handler: (args: z.infer<z.ZodObject<T>>) => MaybePromise<CallToolResult>;
 }
 
 export interface McpToolConfigJsonSchema extends McpToolConfigBase {
@@ -107,10 +100,7 @@ export interface McpToolConfigJsonSchema extends McpToolConfigBase {
   inputSchema?: InputSchema;
   output?: never;
   outputSchema?: InputSchema;
-  handler: (
-    args: Record<string, unknown>,
-    client: ModelContextClient,
-  ) => MaybePromise<CallToolResult>;
+  handler: (args: Record<string, unknown>) => MaybePromise<CallToolResult>;
 }
 
 export interface ToolExecutionState<TResult = CallToolResult> {

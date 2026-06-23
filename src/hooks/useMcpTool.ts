@@ -5,7 +5,6 @@ import type {
   CallToolResult,
   McpToolConfigJsonSchema,
   McpToolConfigZod,
-  ModelContextClient,
   ToolDescriptor,
   ToolExecutionState,
   UseMcpToolReturn,
@@ -92,11 +91,7 @@ export function useMcpTool(
         );
       }
 
-      const client: ModelContextClient = {
-        requestUserInteraction: (callback) => callback(),
-      };
-
-      const result = await handlerRef.current(validatedInput as Record<string, unknown>, client);
+      const result = await handlerRef.current(validatedInput as Record<string, unknown>);
 
       if (isMountedRef.current) {
         inFlightCountRef.current--;
@@ -164,10 +159,7 @@ export function useMcpTool(
       ...(resolvedInputSchema && { inputSchema: resolvedInputSchema }),
       ...(resolvedOutputSchema && { outputSchema: resolvedOutputSchema }),
       ...(cfg.annotations && { annotations: cfg.annotations }),
-      execute: async (
-        args: Record<string, unknown>,
-        client: ModelContextClient,
-      ): Promise<CallToolResult> => {
+      execute: async (args: Record<string, unknown>): Promise<CallToolResult> => {
         inFlightCountRef.current++;
         if (isMountedRef.current) {
           setState((prev) => ({ ...prev, isExecuting: true, error: null }));
@@ -183,7 +175,7 @@ export function useMcpTool(
             validatedArgs = (currentConfig as McpToolConfigZod<z.ZodRawShape>).input.parse(args);
           }
 
-          const result = await handlerRef.current(validatedArgs as Record<string, unknown>, client);
+          const result = await handlerRef.current(validatedArgs as Record<string, unknown>);
 
           if (isMountedRef.current) {
             inFlightCountRef.current--;
