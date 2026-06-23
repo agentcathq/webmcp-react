@@ -131,8 +131,19 @@ export interface RegisterToolOptions {
   exposedTo?: string[];
 }
 
-export interface ModelContext {
+export interface ModelContext extends EventTarget {
   registerTool(tool: ToolDescriptor, options?: RegisterToolOptions): Promise<undefined>;
+  ontoolchange: ((this: ModelContext, ev: Event) => unknown) | null;
+  addEventListener(
+    type: "toolchange",
+    listener: (ev: Event) => unknown,
+    options?: boolean | AddEventListenerOptions,
+  ): void;
+  removeEventListener(
+    type: "toolchange",
+    listener: (ev: Event) => unknown,
+    options?: boolean | EventListenerOptions,
+  ): void;
 }
 
 export interface ModelContextTestingToolInfo {
