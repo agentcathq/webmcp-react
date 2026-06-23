@@ -64,7 +64,9 @@ export function createRegistry(): RegistryInternal {
         }
       }
       if (options?.signal?.aborted) {
-        return Promise.reject(options.signal.reason);
+        // Native Chrome (verified 151) resolves without registering when handed an
+        // already-aborted signal; match that rather than rejecting.
+        return Promise.resolve(undefined);
       }
 
       tools.set(tool.name, {

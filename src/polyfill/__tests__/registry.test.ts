@@ -91,11 +91,11 @@ describe("createRegistry", () => {
     ).rejects.toMatchObject({ name: "SecurityError" });
   });
 
-  it("rejects when the signal is already aborted", async () => {
+  it("resolves as a no-op when the signal is already aborted (matches native Chrome 151)", async () => {
     const registry = createRegistry();
     await expect(
       registry.registerTool(makeTool(), { signal: AbortSignal.abort() }),
-    ).rejects.toMatchObject({ name: "AbortError" });
+    ).resolves.toBeUndefined();
     expect(registry.getTools().has("test_tool")).toBe(false);
   });
 

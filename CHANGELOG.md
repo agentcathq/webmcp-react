@@ -25,8 +25,11 @@ changes.
   - an empty/missing description;
   - an `execute` that is not a function;
   - a non-serializable `inputSchema`;
-  - an `exposedTo` entry that is not a parseable, potentially-trustworthy origin;
-  - an already-aborted signal (rejects with the signal's abort reason).
+  - an `exposedTo` entry that is not a parseable, potentially-trustworthy origin.
+
+  Already-aborted `AbortSignal` passed to `registerTool` resolves as a no-op (registration is
+  skipped), matching native Chrome 151. (Note: WebMCP spec PR #202 specifies rejection; native had
+  not shipped that as of Chrome 151. Revisit if native changes.)
 
   `useMcpTool` routes these rejections into `state.error` and `onError`, except `AbortError`
   (lifecycle teardown), which is ignored.
@@ -57,10 +60,10 @@ changes.
 
 ### Notes
 
-- The **already-aborted-signal rejection** behavior is the library's current decision and is
-  **pending confirmation** against native Chrome 150+. The spec algorithm may instead skip
-  registration and resolve; whichever native does, the polyfill will match and the behavior is
-  documented here.
+- The **already-aborted-signal** behavior was confirmed against native Chrome 151: native skips
+  registration and resolves with `undefined` (a no-op) rather than rejecting, so the polyfill
+  matches. (WebMCP spec PR #202 specifies rejection; native had not shipped that as of Chrome 151.
+  Revisit if native changes.)
 
 ## 0.1.0
 

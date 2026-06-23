@@ -127,7 +127,8 @@ document.modelContext.ontoolchange = () => { /* ... */ };
 - an empty/missing description;
 - an `execute` that is not a function;
 - a non-serializable `inputSchema`;
-- an `exposedTo` entry that is not a parseable, potentially-trustworthy origin;
-- an already-aborted signal (rejects with the signal's abort reason). _Note: this last behavior is the library's current decision and is pending confirmation against native Chrome 150+._
+- an `exposedTo` entry that is not a parseable, potentially-trustworthy origin.
+
+An already-aborted `AbortSignal` does **not** reject: `registerTool` resolves as a no-op (registration is skipped), matching native Chrome 151. _(WebMCP spec PR #202 specifies rejection; native had not shipped that as of Chrome 151. Revisit if native changes.)_
 
 The hook routes these rejections into `state.error` and fires `onError`, except `AbortError` (lifecycle teardown), which is ignored.
