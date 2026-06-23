@@ -63,15 +63,13 @@ export interface CallToolResult {
 }
 
 export interface ToolAnnotations {
-  title?: string;
   readOnlyHint?: boolean;
-  destructiveHint?: boolean;
-  idempotentHint?: boolean;
-  openWorldHint?: boolean;
+  untrustedContentHint?: boolean;
 }
 
 export interface ToolDescriptor<TArgs = Record<string, unknown>> {
   name: string;
+  title?: string;
   description: string;
   inputSchema?: InputSchema;
   outputSchema?: InputSchema;
@@ -81,6 +79,7 @@ export interface ToolDescriptor<TArgs = Record<string, unknown>> {
 
 interface McpToolConfigBase {
   name: string;
+  title?: string;
   description: string;
   annotations?: ToolAnnotations;
   onSuccess?: (result: CallToolResult) => void;

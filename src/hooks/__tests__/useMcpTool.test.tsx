@@ -139,10 +139,11 @@ describe("registration lifecycle", () => {
         <ToolComponent
           config={{
             name: "greet",
+            title: "Greeter",
             description: "Say hello",
             input: z.object({ name: z.string() }),
             output: z.object({ greeting: z.string() }),
-            annotations: { readOnlyHint: true, title: "Greeter" },
+            annotations: { readOnlyHint: true },
             handler: async () => OK_RESULT,
           }}
         />
@@ -162,10 +163,11 @@ describe("registration lifecycle", () => {
         <ToolComponent
           config={{
             name: "greet",
+            title: "Greeter",
             description: "Say hello v2",
             input: z.object({ name: z.string() }),
             output: z.object({ greeting: z.string() }),
-            annotations: { readOnlyHint: true, title: "Greeter" },
+            annotations: { readOnlyHint: true },
             handler: async () => OK_RESULT,
           }}
         />
@@ -177,12 +179,47 @@ describe("registration lifecycle", () => {
     });
 
     const descriptor = spy.mock.calls[spy.mock.calls.length - 1][0];
+    expect(descriptor.title).toBe("Greeter");
     expect(descriptor.annotations).toEqual({
       readOnlyHint: true,
-      title: "Greeter",
     });
     expect(descriptor.outputSchema).toBeDefined();
     expect(descriptor.outputSchema?.properties?.greeting).toBeDefined();
+  });
+
+  it("forwards top-level title and narrowed annotations to the descriptor", async () => {
+    function Tool({ description }: { description: string }) {
+      useMcpTool({
+        name: "greet",
+        title: "Greeter",
+        description,
+        annotations: { readOnlyHint: true, untrustedContentHint: true },
+        handler: () => ({ content: [{ type: "text", text: "hi" }] }),
+      });
+      return null;
+    }
+    const { rerender } = render(
+      <WebMCPProvider name="t" version="1">
+        <Tool description="greets" />
+      </WebMCPProvider>,
+    );
+
+    await waitForRegistration();
+
+    const mc = document.modelContext;
+    expect(mc).toBeDefined();
+    const spy = vi.spyOn(mc as NonNullable<typeof mc>, "registerTool");
+
+    rerender(
+      <WebMCPProvider name="t" version="1">
+        <Tool description="greets v2" />
+      </WebMCPProvider>,
+    );
+
+    await waitFor(() => expect(spy).toHaveBeenCalled());
+    const descriptor = spy.mock.calls[0][0];
+    expect(descriptor.title).toBe("Greeter");
+    expect(descriptor.annotations).toEqual({ readOnlyHint: true, untrustedContentHint: true });
   });
 
   it("removes tool on unmount", async () => {

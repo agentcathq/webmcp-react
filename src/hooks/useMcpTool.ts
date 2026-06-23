@@ -54,6 +54,7 @@ export function useMcpTool(
       : (config as McpToolConfigJsonSchema).outputSchema,
   );
   const annotationsFingerprint = config.annotations ? JSON.stringify(config.annotations) : "";
+  const titleFingerprint = config.title ?? "";
 
   const [state, setState] = useState<ToolExecutionState>(INITIAL_STATE);
 
@@ -155,6 +156,7 @@ export function useMcpTool(
 
     const descriptor: ToolDescriptor = {
       name: cfg.name,
+      ...(cfg.title && { title: cfg.title }),
       description: cfg.description,
       ...(resolvedInputSchema && { inputSchema: resolvedInputSchema }),
       ...(resolvedOutputSchema && { outputSchema: resolvedOutputSchema }),
@@ -240,6 +242,7 @@ export function useMcpTool(
     inputFingerprint,
     outputFingerprint,
     annotationsFingerprint,
+    titleFingerprint,
   ]);
 
   return { state, execute, reset };
