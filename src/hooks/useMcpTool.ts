@@ -225,16 +225,12 @@ export function useMcpTool(
 
     const controller = new AbortController();
 
-    try {
-      mc.registerTool(descriptor, { signal: controller.signal });
-    } catch (err) {
+    mc.registerTool(descriptor, { signal: controller.signal }).catch((err) => {
       warnOnce(
         `register-${cfg.name}`,
         `Failed to register tool "${cfg.name}": ${err instanceof Error ? err.message : String(err)}`,
       );
-      return;
-    }
-
+    });
     TOOL_OWNER_BY_NAME.set(cfg.name, ownerToken);
 
     return () => {
@@ -243,7 +239,6 @@ export function useMcpTool(
         return;
       }
       TOOL_OWNER_BY_NAME.delete(cfg.name);
-      mc.unregisterTool?.(cfg.name);
       controller.abort();
     };
   }, [

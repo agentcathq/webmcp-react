@@ -1,5 +1,27 @@
 import type { InputSchema } from "../types";
 
+const TOOL_NAME_RE = /^[A-Za-z0-9_.-]{1,128}$/;
+
+export function isValidToolName(name: unknown): name is string {
+  return typeof name === "string" && TOOL_NAME_RE.test(name);
+}
+
+export function isPotentiallyTrustworthyOrigin(origin: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(origin);
+  } catch {
+    return false;
+  }
+  if (url.protocol === "https:" || url.protocol === "wss:" || url.protocol === "file:") {
+    return true;
+  }
+  const host = url.hostname;
+  return (
+    host === "localhost" || host.endsWith(".localhost") || host === "127.0.0.1" || host === "::1"
+  );
+}
+
 const TYPE_CHECKERS: Record<string, (val: unknown) => boolean> = {
   string: (val) => typeof val === "string",
   number: (val) => typeof val === "number" && !Number.isNaN(val),

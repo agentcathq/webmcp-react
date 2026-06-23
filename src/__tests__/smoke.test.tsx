@@ -86,7 +86,7 @@ describe("smoke: SSR + client mount availability", () => {
 // ─── Tool registration lifecycle ──────────────────────────────────
 
 describe("smoke: tool registration lifecycle", () => {
-  it("tool visible in listTools after mount, unregisterTool called on unmount", async () => {
+  it("tool visible in listTools after mount, removed on unmount", async () => {
     const { unmount } = render(
       <WebMCPProvider name="smoke" version="1.0">
         <SmokeToolComponent
@@ -107,21 +107,17 @@ describe("smoke: tool registration lifecycle", () => {
     expect(tools[0].name).toBe("smoke_greet");
     expect(tools[0].description).toBe("Smoke test greeter");
 
-    // Spy before unmount — provider cleanup removes the polyfill
-    const mc = navigator.modelContext;
-    expect(mc).toBeDefined();
-    const spy = vi.spyOn(mc as NonNullable<typeof mc>, "unregisterTool");
-
     unmount();
 
-    expect(spy).toHaveBeenCalledWith("smoke_greet");
+    // Provider cleanup removes the polyfill, so the tool is gone.
+    await waitFor(() => expect(navigator.modelContextTesting?.listTools() ?? []).toHaveLength(0));
   });
 });
 
 // ─── StrictMode safety ────────────────────────────────────────────
 
 describe("smoke: StrictMode safety", () => {
-  it("one tool registered after double-mount, clean unregister on real unmount", async () => {
+  it("one tool registered after double-mount, removed on real unmount", async () => {
     const { unmount } = render(
       <StrictMode>
         <WebMCPProvider name="smoke" version="1.0">
@@ -143,14 +139,9 @@ describe("smoke: StrictMode safety", () => {
     expect(tools).toHaveLength(1);
     expect(tools[0].name).toBe("strict_tool");
 
-    const mc = navigator.modelContext;
-    expect(mc).toBeDefined();
-    const spy = vi.spyOn(mc as NonNullable<typeof mc>, "unregisterTool");
-
     unmount();
 
-    expect(spy).toHaveBeenCalledTimes(1);
-    expect(spy).toHaveBeenCalledWith("strict_tool");
+    await waitFor(() => expect(navigator.modelContextTesting?.listTools() ?? []).toHaveLength(0));
   });
 });
 

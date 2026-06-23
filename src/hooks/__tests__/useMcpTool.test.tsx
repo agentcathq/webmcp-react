@@ -185,7 +185,7 @@ describe("registration lifecycle", () => {
     expect(descriptor.outputSchema?.properties?.greeting).toBeDefined();
   });
 
-  it("unregisters tool on unmount", async () => {
+  it("removes tool on unmount", async () => {
     const { unmount } = renderWithProvider(
       <ToolComponent
         config={{
@@ -203,14 +203,9 @@ describe("registration lifecycle", () => {
     await waitForRegistration();
     expect(navigator.modelContextTesting?.listTools()).toHaveLength(1);
 
-    // Spy before unmount — provider cleanup will remove the polyfill
-    const mc = navigator.modelContext;
-    expect(mc).toBeDefined();
-    const spy = vi.spyOn(mc as NonNullable<typeof mc>, "unregisterTool");
-
     unmount();
 
-    expect(spy).toHaveBeenCalledWith("greet");
+    await waitFor(() => expect(navigator.modelContextTesting?.listTools() ?? []).toHaveLength(0));
   });
 
   it("re-registers when description changes", async () => {
@@ -546,7 +541,7 @@ describe("Strict Mode safety", () => {
     expect(result.content[0].text).toBe("hello world");
   });
 
-  it("tool unregistered on real unmount in Strict Mode", async () => {
+  it("tool removed on real unmount in Strict Mode", async () => {
     const { unmount } = render(
       <StrictMode>
         <WebMCPProvider name="test" version="1.0">
@@ -565,13 +560,9 @@ describe("Strict Mode safety", () => {
     await waitForRegistration();
     expect(navigator.modelContextTesting?.listTools()).toHaveLength(1);
 
-    const mc = navigator.modelContext;
-    expect(mc).toBeDefined();
-    const spy = vi.spyOn(mc as NonNullable<typeof mc>, "unregisterTool");
-
     unmount();
 
-    expect(spy).toHaveBeenCalledWith("greet");
+    await waitFor(() => expect(navigator.modelContextTesting?.listTools() ?? []).toHaveLength(0));
   });
 });
 
@@ -1093,7 +1084,7 @@ describe("provider warning", () => {
 
 // ─── Signal-only native API (Chrome 148+) ────────────────────────
 
-describe("signal-only native API (no unregisterTool)", () => {
+describe("signal-only native API (Chrome 148+)", () => {
   type ToolEntry = { name: string; abortCleanup: () => void };
 
   function installSignalOnlyNative() {
@@ -1114,8 +1105,8 @@ describe("signal-only native API (no unregisterTool)", () => {
           opts.signal.addEventListener("abort", handler, { once: true });
           entry.abortCleanup = () => opts.signal?.removeEventListener("abort", handler);
         }
+        return Promise.resolve(undefined);
       },
-      // no unregisterTool — simulates Chrome 148+
     };
 
     Object.defineProperty(navigator, "modelContext", {

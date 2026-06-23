@@ -52,8 +52,9 @@ describe("WebMCPProvider availability", () => {
 
   it("available is true when native API exists", async () => {
     const native = {
-      registerTool() {},
-      unregisterTool() {},
+      registerTool() {
+        return Promise.resolve(undefined);
+      },
     };
     Object.defineProperty(navigator, "modelContext", {
       value: native,
@@ -79,10 +80,11 @@ describe("WebMCPProvider availability", () => {
     }
   });
 
-  it("available is true when native API lacks unregisterTool (Chrome 148+)", async () => {
+  it("available is true with a signal-only native API (Chrome 148+)", async () => {
     const native = {
-      registerTool() {},
-      // no unregisterTool — simulates Chrome 148+
+      registerTool() {
+        return Promise.resolve(undefined);
+      },
     };
     Object.defineProperty(navigator, "modelContext", {
       value: native,
@@ -126,8 +128,9 @@ describe("polyfill lifecycle", () => {
 
   it("does not install polyfill when native API present", async () => {
     const native = {
-      registerTool() {},
-      unregisterTool() {},
+      registerTool() {
+        return Promise.resolve(undefined);
+      },
     };
     Object.defineProperty(navigator, "modelContext", {
       value: native,
@@ -171,8 +174,9 @@ describe("polyfill lifecycle", () => {
 
   it("does not clean up native API on unmount", async () => {
     const native = {
-      registerTool() {},
-      unregisterTool() {},
+      registerTool() {
+        return Promise.resolve(undefined);
+      },
     };
     Object.defineProperty(navigator, "modelContext", {
       value: native,

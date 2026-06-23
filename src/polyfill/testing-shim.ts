@@ -7,6 +7,7 @@ import type { RegistryInternal } from "./registry";
 import { validateArgs } from "./validation";
 
 export function createTestingShim(registry: RegistryInternal): ModelContextTesting {
+  let offChange: (() => void) | null = null;
   return {
     listTools() {
       return Array.from(registry.getTools().values()).map((tool) => ({
@@ -94,7 +95,8 @@ export function createTestingShim(registry: RegistryInternal): ModelContextTesti
     },
 
     registerToolsChangedCallback(callback: () => void) {
-      registry.onToolsChanged(callback);
+      offChange?.();
+      offChange = registry.addChangeListener(callback);
     },
 
     getCrossDocumentScriptToolResult() {

@@ -33,8 +33,9 @@ describe("installPolyfill / cleanupPolyfill", () => {
 
   it("installPolyfill skips when native API exists", () => {
     const native = {
-      registerTool() {},
-      unregisterTool() {},
+      registerTool() {
+        return Promise.resolve(undefined);
+      },
     };
     Object.defineProperty(navigator, "modelContext", {
       value: native,
@@ -70,8 +71,9 @@ describe("installPolyfill / cleanupPolyfill", () => {
 
   it("cleanupPolyfill restores previous property descriptors", () => {
     const original = {
-      registerTool() {},
-      unregisterTool() {},
+      registerTool() {
+        return Promise.resolve(undefined);
+      },
     };
     Object.defineProperty(navigator, "modelContext", {
       value: original,

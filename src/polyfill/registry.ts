@@ -1,15 +1,15 @@
 import type { RegisterToolOptions, ToolDescriptor } from "../types";
+import { isPotentiallyTrustworthyOrigin, isValidToolName } from "./validation";
 
 export interface RegistryInternal {
-  registerTool(tool: ToolDescriptor, options?: RegisterToolOptions): void;
-  unregisterTool(name: string): void;
+  registerTool(tool: ToolDescriptor, options?: RegisterToolOptions): Promise<undefined>;
   getTools(): ReadonlyMap<string, ToolDescriptor>;
-  onToolsChanged(callback: (() => void) | null): void;
+  addChangeListener(callback: () => void): () => void;
 }
 
 export function createRegistry(): RegistryInternal {
   const tools = new Map<string, ToolDescriptor>();
-  let changeCallback: (() => void) | null = null;
+  const listeners = new Set<() => void>();
   let notificationPending = false;
 
   function scheduleNotification(): void {
@@ -17,27 +17,53 @@ export function createRegistry(): RegistryInternal {
     notificationPending = true;
     queueMicrotask(() => {
       notificationPending = false;
-      changeCallback?.();
+      for (const listener of listeners) listener();
     });
   }
 
   return {
-    registerTool(tool: ToolDescriptor, options?: RegisterToolOptions): void {
-      if (typeof tool.name !== "string" || tool.name === "") {
-        throw new DOMException("Tool name must be a non-empty string", "InvalidStateError");
+    registerTool(tool: ToolDescriptor, options?: RegisterToolOptions): Promise<undefined> {
+      if (!isValidToolName(tool.name)) {
+        return Promise.reject(
+          new DOMException(
+            "Tool name must be 1-128 characters of [A-Za-z0-9_.-]",
+            "InvalidStateError",
+          ),
+        );
       }
       if (typeof tool.description !== "string" || tool.description === "") {
-        throw new DOMException("Tool description must be a non-empty string", "InvalidStateError");
+        return Promise.reject(
+          new DOMException("Tool description must be a non-empty string", "InvalidStateError"),
+        );
       }
       if (typeof tool.execute !== "function") {
-        throw new DOMException("Tool execute must be a function", "InvalidStateError");
+        return Promise.reject(
+          new DOMException("Tool execute must be a function", "InvalidStateError"),
+        );
       }
       if (tools.has(tool.name)) {
-        throw new DOMException(`Tool "${tool.name}" is already registered`, "InvalidStateError");
+        return Promise.reject(
+          new DOMException(`Tool "${tool.name}" is already registered`, "InvalidStateError"),
+        );
       }
-
+      if (tool.inputSchema !== undefined) {
+        try {
+          JSON.stringify(tool.inputSchema);
+        } catch {
+          return Promise.reject(new TypeError("Tool inputSchema is not JSON-serializable"));
+        }
+      }
+      if (options?.exposedTo) {
+        for (const origin of options.exposedTo) {
+          if (!isPotentiallyTrustworthyOrigin(origin)) {
+            return Promise.reject(
+              new DOMException(`exposedTo origin "${origin}" is not trustworthy`, "SecurityError"),
+            );
+          }
+        }
+      }
       if (options?.signal?.aborted) {
-        return;
+        return Promise.reject(options.signal.reason);
       }
 
       tools.set(tool.name, {
@@ -59,20 +85,19 @@ export function createRegistry(): RegistryInternal {
           { once: true },
         );
       }
-    },
 
-    unregisterTool(name: string): void {
-      if (tools.delete(name)) {
-        scheduleNotification();
-      }
+      return Promise.resolve(undefined);
     },
 
     getTools(): ReadonlyMap<string, ToolDescriptor> {
       return tools;
     },
 
-    onToolsChanged(callback: (() => void) | null): void {
-      changeCallback = callback;
+    addChangeListener(callback: () => void): () => void {
+      listeners.add(callback);
+      return () => {
+        listeners.delete(callback);
+      };
     },
   };
 }

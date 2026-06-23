@@ -138,11 +138,11 @@ export interface WebMCPStatus {
 
 export interface RegisterToolOptions {
   signal?: AbortSignal;
+  exposedTo?: string[];
 }
 
 export interface ModelContext {
-  registerTool(tool: ToolDescriptor, options?: RegisterToolOptions): void;
-  unregisterTool?(name: string): void;
+  registerTool(tool: ToolDescriptor, options?: RegisterToolOptions): Promise<undefined>;
 }
 
 export interface ModelContextTestingToolInfo {
