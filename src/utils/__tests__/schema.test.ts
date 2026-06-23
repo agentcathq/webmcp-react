@@ -174,4 +174,10 @@ describe("schemaFingerprint", () => {
     const b = z.object({ y: z.number() });
     expect(schemaFingerprint(a)).not.toBe(schemaFingerprint(b));
   });
+
+  it("does not throw on a circular (non-serializable) schema", () => {
+    const circular: Record<string, unknown> = { type: "object" };
+    circular.self = circular;
+    expect(() => schemaFingerprint(circular as never)).not.toThrow();
+  });
 });

@@ -139,10 +139,11 @@ describe("registration lifecycle", () => {
         <ToolComponent
           config={{
             name: "greet",
+            title: "Greeter",
             description: "Say hello",
             input: z.object({ name: z.string() }),
             output: z.object({ greeting: z.string() }),
-            annotations: { readOnlyHint: true, title: "Greeter" },
+            annotations: { readOnlyHint: true },
             handler: async () => OK_RESULT,
           }}
         />
@@ -162,10 +163,11 @@ describe("registration lifecycle", () => {
         <ToolComponent
           config={{
             name: "greet",
+            title: "Greeter",
             description: "Say hello v2",
             input: z.object({ name: z.string() }),
             output: z.object({ greeting: z.string() }),
-            annotations: { readOnlyHint: true, title: "Greeter" },
+            annotations: { readOnlyHint: true },
             handler: async () => OK_RESULT,
           }}
         />
@@ -177,12 +179,47 @@ describe("registration lifecycle", () => {
     });
 
     const descriptor = spy.mock.calls[spy.mock.calls.length - 1][0];
+    expect(descriptor.title).toBe("Greeter");
     expect(descriptor.annotations).toEqual({
       readOnlyHint: true,
-      title: "Greeter",
     });
     expect(descriptor.outputSchema).toBeDefined();
     expect(descriptor.outputSchema?.properties?.greeting).toBeDefined();
+  });
+
+  it("forwards top-level title and narrowed annotations to the descriptor", async () => {
+    function Tool({ description }: { description: string }) {
+      useMcpTool({
+        name: "greet",
+        title: "Greeter",
+        description,
+        annotations: { readOnlyHint: true, untrustedContentHint: true },
+        handler: () => ({ content: [{ type: "text", text: "hi" }] }),
+      });
+      return null;
+    }
+    const { rerender } = render(
+      <WebMCPProvider name="t" version="1">
+        <Tool description="greets" />
+      </WebMCPProvider>,
+    );
+
+    await waitForRegistration();
+
+    const mc = document.modelContext;
+    expect(mc).toBeDefined();
+    const spy = vi.spyOn(mc as NonNullable<typeof mc>, "registerTool");
+
+    rerender(
+      <WebMCPProvider name="t" version="1">
+        <Tool description="greets v2" />
+      </WebMCPProvider>,
+    );
+
+    await waitFor(() => expect(spy).toHaveBeenCalled());
+    const descriptor = spy.mock.calls[0][0];
+    expect(descriptor.title).toBe("Greeter");
+    expect(descriptor.annotations).toEqual({ readOnlyHint: true, untrustedContentHint: true });
   });
 
   it("removes tool on unmount", async () => {
@@ -206,6 +243,38 @@ describe("registration lifecycle", () => {
     unmount();
 
     await waitFor(() => expect(navigator.modelContextTesting?.listTools() ?? []).toHaveLength(0));
+  });
+
+  it("forwards exposedTo and re-registers when it changes", async () => {
+    function Tool({ origins }: { origins: string[] }) {
+      useMcpTool({
+        name: "scoped",
+        description: "scoped tool",
+        exposedTo: origins,
+        handler: () => ({ content: [{ type: "text", text: "hi" }] }),
+      });
+      return null;
+    }
+    const { rerender } = render(
+      <WebMCPProvider name="t" version="1">
+        <Tool origins={["https://a.example"]} />
+      </WebMCPProvider>,
+    );
+
+    await waitForRegistration();
+
+    const mc = document.modelContext as NonNullable<typeof document.modelContext>;
+    expect(mc).toBeDefined();
+    const spy = vi.spyOn(mc, "registerTool");
+
+    rerender(
+      <WebMCPProvider name="t" version="1">
+        <Tool origins={["https://b.example"]} />
+      </WebMCPProvider>,
+    );
+
+    await waitFor(() => expect(spy).toHaveBeenCalled());
+    expect(spy.mock.calls.at(-1)?.[1]?.exposedTo).toEqual(["https://b.example"]);
   });
 
   it("re-registers when description changes", async () => {
@@ -1079,6 +1148,105 @@ describe("provider warning", () => {
     expect(spy).toHaveBeenCalledWith(
       expect.stringContaining("useMcpTool is being used outside <WebMCPProvider>"),
     );
+  });
+});
+
+// ─── Registration error routing + ownership ──────────────────────
+
+describe("registration error routing + ownership", () => {
+  it("routes a registration rejection into state.error and onError", async () => {
+    const onError = vi.fn();
+    function Tool() {
+      const { state } = useMcpTool({
+        name: "dup",
+        description: "d",
+        onError,
+        handler: () => ({ content: [{ type: "text", text: "ok" }] }),
+      });
+      return <span data-testid="err">{state.error?.message ?? ""}</span>;
+    }
+
+    // Install the polyfill first, then pre-register "dup" directly so the hook's
+    // own registration rejects with a duplicate-name InvalidStateError.
+    const { rerender } = render(
+      <WebMCPProvider name="t" version="1">
+        <span />
+      </WebMCPProvider>,
+    );
+    await waitFor(() => expect(document.modelContext).toBeDefined());
+    await (document.modelContext as NonNullable<typeof document.modelContext>).registerTool({
+      name: "dup",
+      description: "incumbent",
+      execute: () => ({ content: [{ type: "text", text: "x" }] }),
+    });
+
+    rerender(
+      <WebMCPProvider name="t" version="1">
+        <Tool />
+      </WebMCPProvider>,
+    );
+
+    await waitFor(() => expect(onError).toHaveBeenCalled());
+    expect(onError.mock.calls[0][0].name).toBe("InvalidStateError");
+    await waitFor(() =>
+      expect(document.querySelector("[data-testid='err']")?.textContent).not.toBe(""),
+    );
+  });
+
+  it("does NOT route AbortError (lifecycle teardown) into onError", async () => {
+    const onError = vi.fn();
+    function Tool() {
+      useMcpTool({
+        name: "abortable",
+        description: "d",
+        onError,
+        handler: () => ({ content: [{ type: "text", text: "ok" }] }),
+      });
+      return null;
+    }
+    const { unmount } = render(
+      <WebMCPProvider name="t" version="1">
+        <Tool />
+      </WebMCPProvider>,
+    );
+    await waitFor(() => expect(navigator.modelContextTesting?.listTools() ?? []).toHaveLength(1));
+    unmount();
+    await act(async () => {});
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it("duplicate-name loser does not evict the winner's registration", async () => {
+    const winnerError = vi.fn();
+    const loserError = vi.fn();
+    function Pair() {
+      useMcpTool({
+        name: "shared",
+        description: "winner",
+        onError: winnerError,
+        handler: () => ({ content: [{ type: "text", text: "winner" }] }),
+      });
+      useMcpTool({
+        name: "shared",
+        description: "loser",
+        onError: loserError,
+        handler: () => ({ content: [{ type: "text", text: "loser" }] }),
+      });
+      return null;
+    }
+
+    render(
+      <WebMCPProvider name="t" version="1">
+        <Pair />
+      </WebMCPProvider>,
+    );
+
+    await waitFor(() => expect(loserError).toHaveBeenCalled());
+    expect(loserError.mock.calls[0][0].name).toBe("InvalidStateError");
+
+    // Winner stays registered; the loser never evicted it.
+    const tools = navigator.modelContextTesting?.listTools() ?? [];
+    expect(tools.filter((t) => t.name === "shared")).toHaveLength(1);
+    expect(winnerError).not.toHaveBeenCalled();
   });
 });
 

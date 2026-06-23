@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ToolDescriptor } from "../../types";
 import { cleanupPolyfill, installPolyfill } from "../index";
 
@@ -145,6 +145,35 @@ describe("installPolyfill / cleanupPolyfill", () => {
   it("cleanupPolyfill is no-op when not installed", () => {
     expect(() => cleanupPolyfill()).not.toThrow();
     expect(document.modelContext).toBeUndefined();
+  });
+
+  it("dispatches toolchange when a tool is registered (addEventListener)", async () => {
+    installPolyfill();
+    const mc = document.modelContext as NonNullable<typeof document.modelContext>;
+    const seen = vi.fn();
+    mc.addEventListener("toolchange", seen);
+    await mc.registerTool({
+      name: "evt_tool",
+      description: "d",
+      execute: () => ({ content: [{ type: "text", text: "ok" }] }),
+    });
+    await Promise.resolve();
+    expect(seen).toHaveBeenCalledTimes(1);
+    expect(seen.mock.calls[0][0]).toBeInstanceOf(Event);
+  });
+
+  it("invokes the ontoolchange handler", async () => {
+    installPolyfill();
+    const mc = document.modelContext as NonNullable<typeof document.modelContext>;
+    const handler = vi.fn();
+    mc.ontoolchange = handler;
+    await mc.registerTool({
+      name: "evt_tool2",
+      description: "d",
+      execute: () => ({ content: [{ type: "text", text: "ok" }] }),
+    });
+    await Promise.resolve();
+    expect(handler).toHaveBeenCalledTimes(1);
   });
 
   it("full lifecycle: install → register tool → execute via testing shim → cleanup", async () => {

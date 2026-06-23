@@ -1,9 +1,26 @@
 import type { ModelContext } from "../types";
-import { createRegistry } from "./registry";
+import { createRegistry, type RegistryInternal } from "./registry";
 import { createTestingShim } from "./testing-shim";
 
-interface PolyfillModelContext extends ModelContext {
-  __isWebMCPPolyfill: true;
+class PolyfillModelContext extends EventTarget {
+  readonly __isWebMCPPolyfill = true as const;
+  registerTool: ModelContext["registerTool"];
+  #ontoolchange: ((ev: Event) => unknown) | null = null;
+
+  constructor(registry: RegistryInternal) {
+    super();
+    this.registerTool = registry.registerTool;
+  }
+
+  get ontoolchange(): ((ev: Event) => unknown) | null {
+    return this.#ontoolchange;
+  }
+
+  set ontoolchange(handler: ((ev: Event) => unknown) | null) {
+    if (this.#ontoolchange) this.removeEventListener("toolchange", this.#ontoolchange);
+    this.#ontoolchange = handler;
+    if (handler) this.addEventListener("toolchange", handler);
+  }
 }
 
 let installed = false;
@@ -25,10 +42,8 @@ export function installPolyfill(): void {
   const registry = createRegistry();
   const testingShim = createTestingShim(registry);
 
-  const modelContext: PolyfillModelContext = {
-    registerTool: registry.registerTool,
-    __isWebMCPPolyfill: true,
-  };
+  const modelContext = new PolyfillModelContext(registry);
+  registry.addChangeListener(() => modelContext.dispatchEvent(new Event("toolchange")));
 
   Object.defineProperty(document, "modelContext", {
     value: modelContext,

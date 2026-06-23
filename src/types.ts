@@ -63,15 +63,13 @@ export interface CallToolResult {
 }
 
 export interface ToolAnnotations {
-  title?: string;
   readOnlyHint?: boolean;
-  destructiveHint?: boolean;
-  idempotentHint?: boolean;
-  openWorldHint?: boolean;
+  untrustedContentHint?: boolean;
 }
 
 export interface ToolDescriptor<TArgs = Record<string, unknown>> {
   name: string;
+  title?: string;
   description: string;
   inputSchema?: InputSchema;
   outputSchema?: InputSchema;
@@ -81,8 +79,10 @@ export interface ToolDescriptor<TArgs = Record<string, unknown>> {
 
 interface McpToolConfigBase {
   name: string;
+  title?: string;
   description: string;
   annotations?: ToolAnnotations;
+  exposedTo?: string[];
   onSuccess?: (result: CallToolResult) => void;
   onError?: (error: Error) => void;
 }
@@ -131,8 +131,19 @@ export interface RegisterToolOptions {
   exposedTo?: string[];
 }
 
-export interface ModelContext {
+export interface ModelContext extends EventTarget {
   registerTool(tool: ToolDescriptor, options?: RegisterToolOptions): Promise<undefined>;
+  ontoolchange: ((this: ModelContext, ev: Event) => unknown) | null;
+  addEventListener(
+    type: "toolchange",
+    listener: (ev: Event) => unknown,
+    options?: boolean | AddEventListenerOptions,
+  ): void;
+  removeEventListener(
+    type: "toolchange",
+    listener: (ev: Event) => unknown,
+    options?: boolean | EventListenerOptions,
+  ): void;
 }
 
 export interface ModelContextTestingToolInfo {
