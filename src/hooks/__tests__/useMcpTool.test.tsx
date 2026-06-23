@@ -1386,3 +1386,113 @@ describe("signal-only native API (Chrome 148+)", () => {
     expect(registered.filter((t) => t.name === "greet").length).toBe(1);
   });
 });
+
+describe("native registerTool compatibility (void return / sync throw)", () => {
+  function installNative(registerTool: () => unknown) {
+    const native = { registerTool };
+    Object.defineProperty(document, "modelContext", {
+      value: native,
+      configurable: true,
+      enumerable: true,
+      writable: true,
+    });
+  }
+
+  function deleteModelContext() {
+    const desc = Object.getOwnPropertyDescriptor(document, "modelContext");
+    if (desc) {
+      Object.defineProperty(document, "modelContext", {
+        value: undefined,
+        configurable: true,
+        writable: true,
+      });
+      delete document.modelContext;
+    }
+  }
+
+  afterEach(() => {
+    deleteModelContext();
+  });
+
+  it("does not crash when native registerTool returns void (undefined)", async () => {
+    installNative(() => undefined);
+
+    const onState = vi.fn<(state: ReturnType<typeof useMcpTool>["state"]) => void>();
+
+    expect(() => {
+      renderWithProvider(
+        <ToolComponent
+          config={{
+            name: "void_tool",
+            description: "d",
+            handler: () => ({ content: [{ type: "text", text: "ok" }] }),
+          }}
+          onState={onState}
+        />,
+      );
+    }).not.toThrow();
+
+    await act(async () => {});
+
+    const last = onState.mock.calls.at(-1)?.[0];
+    expect(last?.error).toBeNull();
+  });
+
+  it("routes a synchronous throw from native registerTool into state.error and onError", async () => {
+    installNative(() => {
+      throw new DOMException("Duplicate tool name", "InvalidStateError");
+    });
+
+    const onError = vi.fn();
+    const onState = vi.fn<(state: ReturnType<typeof useMcpTool>["state"]) => void>();
+
+    renderWithProvider(
+      <ToolComponent
+        config={{
+          name: "dup_tool",
+          description: "d",
+          handler: () => ({ content: [{ type: "text", text: "ok" }] }),
+          onError,
+        }}
+        onState={onState}
+      />,
+    );
+
+    await act(async () => {});
+
+    expect(onError).toHaveBeenCalled();
+    const passed = onError.mock.calls[0]?.[0] as Error;
+    expect(passed.name).toBe("InvalidStateError");
+
+    const last = onState.mock.calls.at(-1)?.[0];
+    expect(last?.error).not.toBeNull();
+    expect(last?.error?.name).toBe("InvalidStateError");
+  });
+
+  it("ignores a synchronous AbortError throw from native registerTool", async () => {
+    installNative(() => {
+      throw new DOMException("aborted", "AbortError");
+    });
+
+    const onError = vi.fn();
+    const onState = vi.fn<(state: ReturnType<typeof useMcpTool>["state"]) => void>();
+
+    renderWithProvider(
+      <ToolComponent
+        config={{
+          name: "abort_tool",
+          description: "d",
+          handler: () => ({ content: [{ type: "text", text: "ok" }] }),
+          onError,
+        }}
+        onState={onState}
+      />,
+    );
+
+    await act(async () => {});
+
+    expect(onError).not.toHaveBeenCalled();
+    const last = onState.mock.calls.at(-1)?.[0];
+    expect(last?.error).toBeNull();
+  });
+});

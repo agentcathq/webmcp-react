@@ -244,10 +244,7 @@ export function useMcpTool(
       TOOL_OWNER_BY_NAME.set(cfg.name, ownerToken);
     }
 
-    mc.registerTool(descriptor, {
-      signal: controller.signal,
-      ...(cfg.exposedTo && { exposedTo: cfg.exposedTo }),
-    }).catch((thrown: unknown) => {
+    const handleRegistrationError = (thrown: unknown) => {
       const error = normalizeError(thrown);
       if (error.name === "AbortError") return; // lifecycle teardown — not a user error
       if (TOOL_OWNER_BY_NAME.get(cfg.name) === ownerToken) {
@@ -257,7 +254,22 @@ export function useMcpTool(
         setState((prev) => ({ ...prev, error }));
       }
       onErrorRef.current?.(error);
-    });
+    };
+
+    try {
+      // Native Chrome (<=151) returns undefined and throws synchronously on error;
+      // the spec (#200) and our polyfill return a Promise<undefined> that rejects.
+      // Handle both shapes.
+      const result: unknown = mc.registerTool(descriptor, {
+        signal: controller.signal,
+        ...(cfg.exposedTo && { exposedTo: cfg.exposedTo }),
+      });
+      if (result && typeof (result as { then?: unknown }).then === "function") {
+        (result as Promise<unknown>).catch(handleRegistrationError);
+      }
+    } catch (thrown) {
+      handleRegistrationError(thrown);
+    }
 
     return () => {
       if (TOOL_OWNER_BY_NAME.get(cfg.name) !== ownerToken) {
