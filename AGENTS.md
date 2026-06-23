@@ -31,7 +31,7 @@ src/                    ← core library (your focus)
 ├── context.tsx         ← WebMCPProvider + useWebMCPStatus hook
 ├── hooks/
 │   └── useMcpTool.ts   ← main hook for tool registration
-├── polyfill/           ← navigator.modelContext polyfill
+├── polyfill/           ← document.modelContext polyfill
 │   ├── index.ts        ← installPolyfill / cleanupPolyfill + polyfill marker
 │   ├── registry.ts     ← in-memory tool storage
 │   ├── testing-shim.ts ← simulates MCP client calls
@@ -64,7 +64,11 @@ These patterns look like they could be simplified but exist for specific reasons
 
 **`"use client"` banner**: Added at build time via `tsup.config.ts`, not in source files. This makes the library work with Next.js SSR. Don't add `"use client"` to source files.
 
-**Native API detection**: The polyfill checks for native `navigator.modelContext` and skips installation if it exists. Don't remove this check — Chrome is shipping native WebMCP support.
+**Native API detection**: The polyfill checks for native `document.modelContext` (document-only — it does not read `navigator.modelContext`) and skips installation if it exists. Don't remove this check — Chrome is shipping native WebMCP support.
+
+**AbortSignal-only unregistration**: There is no `unregisterTool`. Tools are removed by aborting the `AbortSignal` passed to `registerTool`. `useMcpTool` aborts its controller on cleanup; the registry's abort listener removes the tool. Don't reintroduce an imperative unregister method.
+
+**Single-arg execute/handler**: `descriptor.execute(input)` and the user `handler(args)` take a single argument. There is no `ModelContextClient` second argument. Both execution paths must stay mirrored.
 
 ## Testing
 
