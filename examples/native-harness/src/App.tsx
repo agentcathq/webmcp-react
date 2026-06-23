@@ -50,6 +50,15 @@ function AddTool() {
 }
 
 async function runSelfTest(log: (line: string) => void) {
+  // Report which implementation backs document.modelContext.
+  const mc = document.modelContext;
+  if (!mc) {
+    log("FAIL: document.modelContext missing");
+    return;
+  }
+  const isPolyfill = "__isWebMCPPolyfill" in mc;
+  log(isPolyfill ? "INFO: backend = polyfill" : "PASS: backend = native");
+
   const t = navigator.modelContextTesting;
   if (!t) {
     log("FAIL: navigator.modelContextTesting missing");
@@ -75,6 +84,23 @@ async function runSelfTest(log: (line: string) => void) {
       ? "PASS: execute add"
       : `FAIL: add ${addRaw}`,
   );
+
+  // Open spec question: does registerTool with an already-aborted signal
+  // reject (our current assumption) or resolve? Probe the live backend.
+  try {
+    const result = await mc.registerTool(
+      {
+        name: "abort_probe",
+        description: "Probe already-aborted signal behavior.",
+        execute: () => ({ content: [{ type: "text", text: "x" }] }),
+      },
+      { signal: AbortSignal.abort(new DOMException("probe", "AbortError")) },
+    );
+    log(`INFO: already-aborted register RESOLVED (value=${String(result)})`);
+  } catch (err) {
+    const name = err instanceof Error ? err.name : String(err);
+    log(`INFO: already-aborted register REJECTED (${name})`);
+  }
 }
 
 /**
