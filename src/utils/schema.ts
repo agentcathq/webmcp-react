@@ -20,5 +20,9 @@ export function schemaFingerprint(
   if (schema instanceof z.ZodObject) {
     return JSON.stringify(zodToInputSchema(schema));
   }
-  return JSON.stringify(schema);
+  try {
+    return JSON.stringify(schema);
+  } catch {
+    return "__unserializable__";
+  }
 }

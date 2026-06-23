@@ -19,6 +19,26 @@ export function _resetToolOwners(): void {
   TOOL_OWNER_BY_NAME.clear();
 }
 
+// Normalize a thrown value into an Error while preserving its `name`.
+// registerTool rejects with DOMException, which is not `instanceof Error` in
+// every environment (e.g. jsdom); a naive `new Error(String(thrown))` would
+// drop the `name` (e.g. "InvalidStateError", "AbortError") that callers route on.
+function normalizeError(thrown: unknown): Error {
+  if (thrown instanceof Error) return thrown;
+  if (
+    typeof thrown === "object" &&
+    thrown !== null &&
+    "name" in thrown &&
+    typeof (thrown as { name: unknown }).name === "string"
+  ) {
+    const source = thrown as { name: string; message?: unknown };
+    const error = new Error(typeof source.message === "string" ? source.message : String(thrown));
+    error.name = source.name;
+    return error;
+  }
+  return new Error(String(thrown));
+}
+
 const INITIAL_STATE: ToolExecutionState = {
   isExecuting: false,
   lastResult: null,
@@ -219,21 +239,28 @@ export function useMcpTool(
     };
 
     const controller = new AbortController();
+    const alreadyOwned = TOOL_OWNER_BY_NAME.has(cfg.name);
+    if (!alreadyOwned) {
+      TOOL_OWNER_BY_NAME.set(cfg.name, ownerToken);
+    }
 
     mc.registerTool(descriptor, {
       signal: controller.signal,
       ...(cfg.exposedTo && { exposedTo: cfg.exposedTo }),
-    }).catch((err) => {
-      warnOnce(
-        `register-${cfg.name}`,
-        `Failed to register tool "${cfg.name}": ${err instanceof Error ? err.message : String(err)}`,
-      );
+    }).catch((thrown: unknown) => {
+      const error = normalizeError(thrown);
+      if (error.name === "AbortError") return; // lifecycle teardown — not a user error
+      if (TOOL_OWNER_BY_NAME.get(cfg.name) === ownerToken) {
+        TOOL_OWNER_BY_NAME.delete(cfg.name);
+      }
+      if (isMountedRef.current) {
+        setState((prev) => ({ ...prev, error }));
+      }
+      onErrorRef.current?.(error);
     });
-    TOOL_OWNER_BY_NAME.set(cfg.name, ownerToken);
 
     return () => {
-      const currentOwner = TOOL_OWNER_BY_NAME.get(cfg.name);
-      if (currentOwner !== ownerToken) {
+      if (TOOL_OWNER_BY_NAME.get(cfg.name) !== ownerToken) {
         return;
       }
       TOOL_OWNER_BY_NAME.delete(cfg.name);

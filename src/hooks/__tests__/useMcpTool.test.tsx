@@ -1151,6 +1151,105 @@ describe("provider warning", () => {
   });
 });
 
+// ─── Registration error routing + ownership ──────────────────────
+
+describe("registration error routing + ownership", () => {
+  it("routes a registration rejection into state.error and onError", async () => {
+    const onError = vi.fn();
+    function Tool() {
+      const { state } = useMcpTool({
+        name: "dup",
+        description: "d",
+        onError,
+        handler: () => ({ content: [{ type: "text", text: "ok" }] }),
+      });
+      return <span data-testid="err">{state.error?.message ?? ""}</span>;
+    }
+
+    // Install the polyfill first, then pre-register "dup" directly so the hook's
+    // own registration rejects with a duplicate-name InvalidStateError.
+    const { rerender } = render(
+      <WebMCPProvider name="t" version="1">
+        <span />
+      </WebMCPProvider>,
+    );
+    await waitFor(() => expect(document.modelContext).toBeDefined());
+    await (document.modelContext as NonNullable<typeof document.modelContext>).registerTool({
+      name: "dup",
+      description: "incumbent",
+      execute: () => ({ content: [{ type: "text", text: "x" }] }),
+    });
+
+    rerender(
+      <WebMCPProvider name="t" version="1">
+        <Tool />
+      </WebMCPProvider>,
+    );
+
+    await waitFor(() => expect(onError).toHaveBeenCalled());
+    expect(onError.mock.calls[0][0].name).toBe("InvalidStateError");
+    await waitFor(() =>
+      expect(document.querySelector("[data-testid='err']")?.textContent).not.toBe(""),
+    );
+  });
+
+  it("does NOT route AbortError (lifecycle teardown) into onError", async () => {
+    const onError = vi.fn();
+    function Tool() {
+      useMcpTool({
+        name: "abortable",
+        description: "d",
+        onError,
+        handler: () => ({ content: [{ type: "text", text: "ok" }] }),
+      });
+      return null;
+    }
+    const { unmount } = render(
+      <WebMCPProvider name="t" version="1">
+        <Tool />
+      </WebMCPProvider>,
+    );
+    await waitFor(() => expect(navigator.modelContextTesting?.listTools() ?? []).toHaveLength(1));
+    unmount();
+    await act(async () => {});
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it("duplicate-name loser does not evict the winner's registration", async () => {
+    const winnerError = vi.fn();
+    const loserError = vi.fn();
+    function Pair() {
+      useMcpTool({
+        name: "shared",
+        description: "winner",
+        onError: winnerError,
+        handler: () => ({ content: [{ type: "text", text: "winner" }] }),
+      });
+      useMcpTool({
+        name: "shared",
+        description: "loser",
+        onError: loserError,
+        handler: () => ({ content: [{ type: "text", text: "loser" }] }),
+      });
+      return null;
+    }
+
+    render(
+      <WebMCPProvider name="t" version="1">
+        <Pair />
+      </WebMCPProvider>,
+    );
+
+    await waitFor(() => expect(loserError).toHaveBeenCalled());
+    expect(loserError.mock.calls[0][0].name).toBe("InvalidStateError");
+
+    // Winner stays registered; the loser never evicted it.
+    const tools = navigator.modelContextTesting?.listTools() ?? [];
+    expect(tools.filter((t) => t.name === "shared")).toHaveLength(1);
+    expect(winnerError).not.toHaveBeenCalled();
+  });
+});
+
 // ─── Signal-only native API (Chrome 148+) ────────────────────────
 
 describe("signal-only native API (Chrome 148+)", () => {
