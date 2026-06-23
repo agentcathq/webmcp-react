@@ -245,6 +245,38 @@ describe("registration lifecycle", () => {
     await waitFor(() => expect(navigator.modelContextTesting?.listTools() ?? []).toHaveLength(0));
   });
 
+  it("forwards exposedTo and re-registers when it changes", async () => {
+    function Tool({ origins }: { origins: string[] }) {
+      useMcpTool({
+        name: "scoped",
+        description: "scoped tool",
+        exposedTo: origins,
+        handler: () => ({ content: [{ type: "text", text: "hi" }] }),
+      });
+      return null;
+    }
+    const { rerender } = render(
+      <WebMCPProvider name="t" version="1">
+        <Tool origins={["https://a.example"]} />
+      </WebMCPProvider>,
+    );
+
+    await waitForRegistration();
+
+    const mc = document.modelContext as NonNullable<typeof document.modelContext>;
+    expect(mc).toBeDefined();
+    const spy = vi.spyOn(mc, "registerTool");
+
+    rerender(
+      <WebMCPProvider name="t" version="1">
+        <Tool origins={["https://b.example"]} />
+      </WebMCPProvider>,
+    );
+
+    await waitFor(() => expect(spy).toHaveBeenCalled());
+    expect(spy.mock.calls.at(-1)?.[1]?.exposedTo).toEqual(["https://b.example"]);
+  });
+
   it("re-registers when description changes", async () => {
     const executeRef = { current: null } as React.MutableRefObject<ExecuteFn | null>;
 

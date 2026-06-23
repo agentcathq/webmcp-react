@@ -82,6 +82,7 @@ interface McpToolConfigBase {
   title?: string;
   description: string;
   annotations?: ToolAnnotations;
+  exposedTo?: string[];
   onSuccess?: (result: CallToolResult) => void;
   onError?: (error: Error) => void;
 }

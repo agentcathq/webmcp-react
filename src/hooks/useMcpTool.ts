@@ -55,6 +55,7 @@ export function useMcpTool(
   );
   const annotationsFingerprint = config.annotations ? JSON.stringify(config.annotations) : "";
   const titleFingerprint = config.title ?? "";
+  const exposedToFingerprint = config.exposedTo ? JSON.stringify(config.exposedTo) : "";
 
   const [state, setState] = useState<ToolExecutionState>(INITIAL_STATE);
 
@@ -219,7 +220,10 @@ export function useMcpTool(
 
     const controller = new AbortController();
 
-    mc.registerTool(descriptor, { signal: controller.signal }).catch((err) => {
+    mc.registerTool(descriptor, {
+      signal: controller.signal,
+      ...(cfg.exposedTo && { exposedTo: cfg.exposedTo }),
+    }).catch((err) => {
       warnOnce(
         `register-${cfg.name}`,
         `Failed to register tool "${cfg.name}": ${err instanceof Error ? err.message : String(err)}`,
@@ -243,6 +247,7 @@ export function useMcpTool(
     outputFingerprint,
     annotationsFingerprint,
     titleFingerprint,
+    exposedToFingerprint,
   ]);
 
   return { state, execute, reset };
