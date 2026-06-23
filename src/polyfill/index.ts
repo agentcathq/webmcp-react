@@ -13,13 +13,13 @@ let previousModelContextTesting: PropertyDescriptor | undefined;
 export function installPolyfill(): void {
   if (typeof window === "undefined") return;
 
-  if (navigator.modelContext && !("__isWebMCPPolyfill" in navigator.modelContext)) {
+  if (document.modelContext && !("__isWebMCPPolyfill" in document.modelContext)) {
     return;
   }
 
   if (installed) return;
 
-  previousModelContext = Object.getOwnPropertyDescriptor(navigator, "modelContext");
+  previousModelContext = Object.getOwnPropertyDescriptor(document, "modelContext");
   previousModelContextTesting = Object.getOwnPropertyDescriptor(navigator, "modelContextTesting");
 
   const registry = createRegistry();
@@ -30,7 +30,7 @@ export function installPolyfill(): void {
     __isWebMCPPolyfill: true,
   };
 
-  Object.defineProperty(navigator, "modelContext", {
+  Object.defineProperty(document, "modelContext", {
     value: modelContext,
     configurable: true,
     enumerable: true,
@@ -51,9 +51,9 @@ export function cleanupPolyfill(): void {
   if (!installed) return;
 
   if (previousModelContext) {
-    Object.defineProperty(navigator, "modelContext", previousModelContext);
+    Object.defineProperty(document, "modelContext", previousModelContext);
   } else {
-    delete navigator.modelContext;
+    delete document.modelContext;
   }
 
   if (previousModelContextTesting) {

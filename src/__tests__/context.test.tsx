@@ -14,14 +14,14 @@ function StatusDisplay() {
 }
 
 function deleteNativeModelContext() {
-  const desc = Object.getOwnPropertyDescriptor(navigator, "modelContext");
+  const desc = Object.getOwnPropertyDescriptor(document, "modelContext");
   if (desc) {
-    Object.defineProperty(navigator, "modelContext", {
+    Object.defineProperty(document, "modelContext", {
       value: undefined,
       configurable: true,
       writable: true,
     });
-    delete navigator.modelContext;
+    delete document.modelContext;
   }
 }
 
@@ -56,7 +56,7 @@ describe("WebMCPProvider availability", () => {
         return Promise.resolve(undefined);
       },
     };
-    Object.defineProperty(navigator, "modelContext", {
+    Object.defineProperty(document, "modelContext", {
       value: native,
       configurable: true,
       enumerable: true,
@@ -74,7 +74,7 @@ describe("WebMCPProvider availability", () => {
         expect(getByTestId("status")).toHaveTextContent("yes");
       });
       // Native API should still be the original, not replaced by polyfill
-      expect(navigator.modelContext).toBe(native);
+      expect(document.modelContext).toBe(native);
     } finally {
       deleteNativeModelContext();
     }
@@ -86,7 +86,7 @@ describe("WebMCPProvider availability", () => {
         return Promise.resolve(undefined);
       },
     };
-    Object.defineProperty(navigator, "modelContext", {
+    Object.defineProperty(document, "modelContext", {
       value: native,
       configurable: true,
       enumerable: true,
@@ -103,7 +103,7 @@ describe("WebMCPProvider availability", () => {
       await waitFor(() => {
         expect(getByTestId("status")).toHaveTextContent("yes");
       });
-      expect(navigator.modelContext).toBe(native);
+      expect(document.modelContext).toBe(native);
     } finally {
       deleteNativeModelContext();
     }
@@ -121,9 +121,11 @@ describe("polyfill lifecycle", () => {
     );
 
     await waitFor(() => {
-      expect(navigator.modelContext).toBeDefined();
+      expect(document.modelContext).toBeDefined();
     });
-    expect((navigator.modelContext as Record<string, unknown>).__isWebMCPPolyfill).toBe(true);
+    expect((document.modelContext as unknown as Record<string, unknown>).__isWebMCPPolyfill).toBe(
+      true,
+    );
   });
 
   it("does not install polyfill when native API present", async () => {
@@ -132,7 +134,7 @@ describe("polyfill lifecycle", () => {
         return Promise.resolve(undefined);
       },
     };
-    Object.defineProperty(navigator, "modelContext", {
+    Object.defineProperty(document, "modelContext", {
       value: native,
       configurable: true,
       enumerable: true,
@@ -147,10 +149,10 @@ describe("polyfill lifecycle", () => {
       );
 
       await waitFor(() => {
-        expect(navigator.modelContext).toBe(native);
+        expect(document.modelContext).toBe(native);
       });
       expect(
-        (navigator.modelContext as Record<string, unknown>).__isWebMCPPolyfill,
+        (document.modelContext as unknown as Record<string, unknown>).__isWebMCPPolyfill,
       ).toBeUndefined();
     } finally {
       deleteNativeModelContext();
@@ -165,11 +167,11 @@ describe("polyfill lifecycle", () => {
     );
 
     await waitFor(() => {
-      expect(navigator.modelContext).toBeDefined();
+      expect(document.modelContext).toBeDefined();
     });
 
     unmount();
-    expect(navigator.modelContext).toBeUndefined();
+    expect(document.modelContext).toBeUndefined();
   });
 
   it("does not clean up native API on unmount", async () => {
@@ -178,7 +180,7 @@ describe("polyfill lifecycle", () => {
         return Promise.resolve(undefined);
       },
     };
-    Object.defineProperty(navigator, "modelContext", {
+    Object.defineProperty(document, "modelContext", {
       value: native,
       configurable: true,
       enumerable: true,
@@ -193,11 +195,11 @@ describe("polyfill lifecycle", () => {
       );
 
       await waitFor(() => {
-        expect(navigator.modelContext).toBe(native);
+        expect(document.modelContext).toBe(native);
       });
 
       unmount();
-      expect(navigator.modelContext).toBe(native);
+      expect(document.modelContext).toBe(native);
     } finally {
       deleteNativeModelContext();
     }
@@ -226,12 +228,14 @@ describe("multi-provider lifecycle", () => {
 
     // Unmount first provider — polyfill should still be alive
     result1.unmount();
-    expect(navigator.modelContext).toBeDefined();
-    expect((navigator.modelContext as Record<string, unknown>).__isWebMCPPolyfill).toBe(true);
+    expect(document.modelContext).toBeDefined();
+    expect((document.modelContext as unknown as Record<string, unknown>).__isWebMCPPolyfill).toBe(
+      true,
+    );
 
     // Unmount second provider — now polyfill should be cleaned up
     result2.unmount();
-    expect(navigator.modelContext).toBeUndefined();
+    expect(document.modelContext).toBeUndefined();
   });
 });
 
@@ -312,6 +316,6 @@ describe("Strict Mode", () => {
     });
 
     unmount();
-    expect(navigator.modelContext).toBeUndefined();
+    expect(document.modelContext).toBeUndefined();
   });
 });

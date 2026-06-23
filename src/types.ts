@@ -167,8 +167,10 @@ export interface ModelContextTesting {
 }
 
 declare global {
-  interface Navigator {
+  interface Document {
     modelContext?: ModelContext;
+  }
+  interface Navigator {
     modelContextTesting?: ModelContextTesting;
   }
 }

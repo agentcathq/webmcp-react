@@ -153,7 +153,7 @@ describe("registration lifecycle", () => {
 
     // listTools() only returns name/description/inputSchema, so spy on registerTool
     // and trigger re-registration by changing description.
-    const mc = navigator.modelContext;
+    const mc = document.modelContext;
     expect(mc).toBeDefined();
     const spy = vi.spyOn(mc as NonNullable<typeof mc>, "registerTool");
 
@@ -230,7 +230,7 @@ describe("registration lifecycle", () => {
 
     await waitForRegistration();
 
-    const mc = navigator.modelContext;
+    const mc = document.modelContext;
     expect(mc).toBeDefined();
     const spy = vi.spyOn(mc as NonNullable<typeof mc>, "registerTool");
 
@@ -276,7 +276,7 @@ describe("registration lifecycle", () => {
 
     await waitForRegistration();
 
-    const mc = navigator.modelContext;
+    const mc = document.modelContext;
     expect(mc).toBeDefined();
     const spy = vi.spyOn(mc as NonNullable<typeof mc>, "registerTool");
 
@@ -322,7 +322,7 @@ describe("registration lifecycle", () => {
 
     await waitForRegistration();
 
-    const mc = navigator.modelContext;
+    const mc = document.modelContext;
     expect(mc).toBeDefined();
     const spy = vi.spyOn(mc as NonNullable<typeof mc>, "registerTool");
 
@@ -370,7 +370,7 @@ describe("registration lifecycle", () => {
 
     await waitForRegistration();
 
-    const mc = navigator.modelContext;
+    const mc = document.modelContext;
     expect(mc).toBeDefined();
     const spy = vi.spyOn(mc as NonNullable<typeof mc>, "registerTool");
 
@@ -414,7 +414,7 @@ describe("registration lifecycle", () => {
 
     await waitForRegistration();
 
-    const mc = navigator.modelContext;
+    const mc = document.modelContext;
     expect(mc).toBeDefined();
     const spy = vi.spyOn(mc as NonNullable<typeof mc>, "registerTool");
 
@@ -458,7 +458,7 @@ describe("registration lifecycle", () => {
 
     await waitForRegistration();
 
-    const mc = navigator.modelContext;
+    const mc = document.modelContext;
     expect(mc).toBeDefined();
     const spy = vi.spyOn(mc as NonNullable<typeof mc>, "registerTool");
 
@@ -980,9 +980,9 @@ describe("SSR safety", () => {
   it("registration effect does not fire during SSR", () => {
     // During SSR, typeof navigator is "undefined" in Node, but jsdom provides it.
     // Verify no tool is registered synchronously during renderToString.
-    // After renderToString, navigator.modelContext should not exist (no provider effect ran).
-    const prevMc = navigator.modelContext;
-    delete navigator.modelContext;
+    // After renderToString, document.modelContext should not exist (no provider effect ran).
+    const prevMc = document.modelContext;
+    delete document.modelContext;
 
     try {
       renderToString(
@@ -998,10 +998,10 @@ describe("SSR safety", () => {
       );
 
       // No modelContext should exist — effects don't run during renderToString
-      expect(navigator.modelContext).toBeUndefined();
+      expect(document.modelContext).toBeUndefined();
     } finally {
       if (prevMc) {
-        Object.defineProperty(navigator, "modelContext", {
+        Object.defineProperty(document, "modelContext", {
           value: prevMc,
           configurable: true,
           enumerable: true,
@@ -1109,7 +1109,7 @@ describe("signal-only native API (Chrome 148+)", () => {
       },
     };
 
-    Object.defineProperty(navigator, "modelContext", {
+    Object.defineProperty(document, "modelContext", {
       value: native,
       configurable: true,
       enumerable: true,
@@ -1120,14 +1120,14 @@ describe("signal-only native API (Chrome 148+)", () => {
   }
 
   function deleteModelContext() {
-    const desc = Object.getOwnPropertyDescriptor(navigator, "modelContext");
+    const desc = Object.getOwnPropertyDescriptor(document, "modelContext");
     if (desc) {
-      Object.defineProperty(navigator, "modelContext", {
+      Object.defineProperty(document, "modelContext", {
         value: undefined,
         configurable: true,
         writable: true,
       });
-      delete navigator.modelContext;
+      delete document.modelContext;
     }
   }
 
@@ -1183,7 +1183,7 @@ describe("signal-only native API (Chrome 148+)", () => {
   it("re-registers with fresh signal on prop change", async () => {
     const registered = installSignalOnlyNative();
     const registerSpy = vi.spyOn(
-      navigator.modelContext as NonNullable<typeof navigator.modelContext>,
+      document.modelContext as NonNullable<typeof document.modelContext>,
       "registerTool",
     );
 

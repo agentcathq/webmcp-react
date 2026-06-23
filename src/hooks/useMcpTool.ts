@@ -137,11 +137,11 @@ export function useMcpTool(
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: schema objects are tracked via fingerprints, handler/callbacks via refs
   useEffect(() => {
-    if (typeof navigator === "undefined" || !navigator.modelContext) {
+    if (typeof document === "undefined" || !document.modelContext) {
       return;
     }
 
-    const mc = navigator.modelContext;
+    const mc = document.modelContext;
     const cfg = configRef.current;
     const ownerToken = Symbol(cfg.name);
     const zodPath = "input" in cfg && cfg.input instanceof z.ZodObject;
