@@ -85,32 +85,32 @@ export function MyTool() {
 }
 ```
 
-## Annotations
+## Title and annotations
 
-Set annotations to hint AI agents about tool behavior. Only include annotations that apply:
+Use the top-level `title` for a human-friendly display name, and `annotations` to hint AI agents about tool behavior. Only include annotations that apply:
 
 ```tsx
 useMcpTool({
+  name: "my_tool",
+  title: "Human-friendly title",          // Optional display name for the tool
   // ...
   annotations: {
-    title: "Human-friendly title",       // Display name for the tool
-    readOnlyHint: true,                  // Tool only reads data, no side effects
-    destructiveHint: true,               // Tool deletes or irreversibly modifies data
-    idempotentHint: true,                // Safe to call multiple times with same input
-    openWorldHint: true,                 // Tool interacts with external systems
+    readOnlyHint: true,                    // Tool only reads data, no side effects
+    untrustedContentHint: true,            // Tool may return content from untrusted sources
   },
 });
 ```
 
-**Guideline for choosing annotations:**
+`ToolAnnotations` is only `{ readOnlyHint?: boolean; untrustedContentHint?: boolean }`. There is no `title` inside `annotations` (it is a top-level field), and the older `destructiveHint`, `idempotentHint`, and `openWorldHint` hints no longer exist.
 
-| Tool behavior | Annotations to set |
+**Guideline for choosing fields:**
+
+| Tool behavior | What to set |
 |---|---|
-| Fetches/queries data | `readOnlyHint: true` |
-| Creates a record | `idempotentHint: false` (or omit, false is default) |
-| Deletes or overwrites data | `destructiveHint: true` |
-| Calls an external API | `openWorldHint: true` |
-| Can be retried safely | `idempotentHint: true` |
+| Needs a display name | top-level `title: "..."` |
+| Fetches/queries data, no side effects | `annotations: { readOnlyHint: true }` |
+| Returns content from untrusted sources (user input, external APIs) | `annotations: { untrustedContentHint: true }` |
+| Creates/updates/deletes data | omit `readOnlyHint` (a tool with side effects should not claim it is read-only) |
 
 ## Return format
 

@@ -7,7 +7,7 @@ description: Bootstraps webmcp-react into an existing React or Next.js app. Inst
 
 ## Overview
 
-`webmcp-react` exposes React app functionality as typed tools on `navigator.modelContext` (the W3C WebMCP API). AI agents discover and call these tools. This skill bootstraps the full setup.
+`webmcp-react` exposes React app functionality as typed tools on `document.modelContext` (the W3C WebMCP API). AI agents discover and call these tools. This skill bootstraps the full setup.
 
 ## Step 1: Install dependencies
 
@@ -110,7 +110,7 @@ Render it inside the provider:
 
 ## Step 4: Connect to AI clients
 
-Desktop MCP clients (Cursor, Claude Code) cannot access `navigator.modelContext` directly. A Chrome extension + local MCP server bridges the gap.
+Desktop MCP clients (Cursor, Claude Code) cannot access `document.modelContext` directly. A Chrome extension + local MCP server bridges the gap.
 
 ### 4a. Install the Chrome extension
 

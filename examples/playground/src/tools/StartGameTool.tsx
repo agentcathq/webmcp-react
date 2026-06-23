@@ -13,7 +13,6 @@ export function StartGameTool({ onStart }: Props) {
     input: z.object({
       difficulty: z.enum(["normal", "hard"]).describe("Normal: any valid word is accepted each turn. Hard: confirmed letters (green in same position, yellow somewhere) must appear in all future guesses."),
     }),
-    annotations: { idempotentHint: true },
     handler: async ({ difficulty }) => {
       onStart(difficulty);
       return {
