@@ -12,7 +12,7 @@ export function GameStatusTool({ gameState }: Props) {
     name: "get_game_status",
     description: "Get the current status of the Wordle game, including guesses made, remaining attempts, and known letter positions.",
     input: z.object({}),
-    annotations: { readOnlyHint: true, idempotentHint: true },
+    annotations: { readOnlyHint: true },
     handler: async () => {
       const guessCount = gameState.guesses.length;
       const remaining = MAX_GUESSES - guessCount;

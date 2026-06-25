@@ -1,6 +1,6 @@
 # webmcp-react
 
-React hooks for exposing typed tools on `navigator.modelContext`.
+React hooks for exposing typed tools on `document.modelContext`, aligned with the current [WebMCP](https://github.com/webmachinelearning/webmcp) spec.
 
 [![npm version](https://img.shields.io/npm/v/webmcp-react)](https://www.npmjs.com/package/webmcp-react)
 [![license](https://img.shields.io/npm/l/webmcp-react)](./LICENSE)
@@ -56,7 +56,7 @@ export default function App() {
 }
 ```
 
-That's it. The tool is registered on `navigator.modelContext` and can be called by WebMCP-compatible agents.
+That's it. The tool is registered on `document.modelContext` and can be called by WebMCP-compatible agents.
 
 ### Using an AI agent?
 
@@ -70,7 +70,7 @@ Works with Cursor, Claude Code, GitHub Copilot, Cline, and [18+ other agents](ht
 
 ## How it works
 
-[WebMCP](https://github.com/webmachinelearning/webmcp) is an emerging web standard that adds `navigator.modelContext` to the browser, an API that lets any page expose typed, callable tools to AI agents. Native browser support is still experimental and may evolve quickly. Chrome recently [released it in Early Preview](https://developer.chrome.com/blog/webmcp-epp).
+[WebMCP](https://github.com/webmachinelearning/webmcp) is an emerging web standard that adds `document.modelContext` to the browser, an API that lets any page expose typed, callable tools to AI agents. Native browser support is still experimental and may evolve quickly. Chrome recently [released it in Early Preview](https://developer.chrome.com/blog/webmcp-epp).
 
 This library provides React bindings for that API. `<WebMCPProvider>` installs a polyfill (skipped when native support exists), and each `useMcpTool` call registers a tool that agents can discover and execute.
 
@@ -78,7 +78,7 @@ This library provides React bindings for that API. `<WebMCPProvider>` installs a
 
 ## Connect to AI clients
 
-Desktop MCP clients like Claude Code and Cursor can't access `navigator.modelContext` directly. The [WebMCP Bridge extension](https://chromewebstore.google.com/detail/webmcp-bridge/chgjbookknohehmaocfijekhaocaanaf) connects your registered tools to any MCP client.
+Desktop MCP clients like Claude Code and Cursor can't access `document.modelContext` directly. The [WebMCP Bridge extension](https://chromewebstore.google.com/detail/webmcp-bridge/chgjbookknohehmaocfijekhaocaanaf) connects your registered tools to any MCP client.
 
 1. Install the extension from the [Chrome Web Store](https://chromewebstore.google.com/detail/webmcp-bridge/chgjbookknohehmaocfijekhaocaanaf)
 2. Configure your MCP client — see the [extension setup guide](./extension/README.md) for details
@@ -115,20 +115,20 @@ function TranslateTool() {
 }
 ```
 
-### Tool annotations
+### Title and annotations
 
-Hint AI agents about tool behavior with annotations (supports the [full MCP annotation set](https://modelcontextprotocol.io/docs/concepts/tools#annotations)):
+Give a tool a human-friendly display `title`, and hint AI agents about its behavior with `annotations`. Per the current WebMCP spec, annotations are limited to `readOnlyHint` and `untrustedContentHint`:
 
 ```tsx
 useMcpTool({
-  name: "delete_user",
-  description: "Permanently delete a user account",
-  input: z.object({ userId: z.string() }),
+  name: "search_users",
+  title: "Search users",
+  description: "Find users by name or email",
+  input: z.object({ query: z.string() }),
   annotations: {
-    destructiveHint: true,
-    idempotentHint: true,
+    readOnlyHint: true,
   },
-  handler: async ({ userId }) => { /* ... */ },
+  handler: async ({ query }) => { /* ... */ },
 });
 ```
 
@@ -190,6 +190,20 @@ useMcpTool({
 ### SSR
 
 Works with Next.js, Remix, and any server-rendering framework out of the box. The build includes a `"use client"` banner, so no extra configuration is needed.
+
+## Breaking changes in 0.2.0
+
+0.2.0 realigns the library with the current [WebMCP](https://github.com/webmachinelearning/webmcp) spec. If you're upgrading from 0.1.0:
+
+- **API moved to `document.modelContext`.** Tools register on `document.modelContext` instead of `navigator.modelContext`. (The testing/consumer API stays on `navigator.modelContextTesting`.)
+- **`registerTool` returns a `Promise`.** The polyfill's `registerTool(tool, options?)` returns a `Promise<undefined>` that rejects on invalid input (bad/duplicate/empty name, empty description, non-function execute, non-serializable `inputSchema`, untrustworthy `exposedTo` origin, or an already-aborted signal).
+- **Unregistration is AbortSignal-only.** There is no `unregisterTool` — pass `{ signal }` and abort it. `useMcpTool` does this for you on unmount.
+- **Handlers take a single argument.** `handler(args)` / `execute(input)` no longer receive a second `client` argument; `ModelContextClient` and `requestUserInteraction` are removed.
+- **`annotations` narrowed to `{ readOnlyHint, untrustedContentHint }`.** The classic hints (`destructiveHint`, `idempotentHint`, `openWorldHint`) and `annotations.title` are removed. A new top-level `title?` field replaces `annotations.title`.
+- **New `exposedTo?: string[]`** controls cross-frame origin visibility (changing it re-registers the tool).
+- **New `toolchange` event.** `document.modelContext` is an `EventTarget` that fires a bare `toolchange` event on tool register/unregister; an `ontoolchange` handler is also supported.
+
+`outputSchema` (Zod `output` / JSON-Schema `outputSchema`) and `structuredContent` on results are retained as documented library extensions.
 
 ## API
 
