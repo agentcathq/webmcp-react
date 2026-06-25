@@ -4,7 +4,7 @@
 
 ## Overview
 
-WebMCP Bridge is an open-source Chrome extension that connects tools registered on web pages (via the `navigator.modelContext` browser API) to local AI assistants through Model Context Protocol (MCP). It does not collect, store, or transmit any personal data.
+WebMCP Bridge is an open-source Chrome extension that connects tools registered on web pages (via the `document.modelContext` browser API) to local AI assistants through Model Context Protocol (MCP). It does not collect, store, or transmit any personal data.
 
 ## What data does the extension access?
 

@@ -1,12 +1,12 @@
 # WebMCP Bridge Server Chrome Extension
 
-A Chrome extension that bridges tools registered on `navigator.modelContext` to desktop AI clients (Claude Code, Cursor, etc.) via MCP.
+A Chrome extension that bridges tools registered on `document.modelContext` to desktop AI clients (Claude Code, Cursor, etc.) via MCP.
 
 > Note: This extension is a workaround for now. Once Chrome natively supports some bridge solution, I'll deprecate this extension.
 
 ## How it works
 
-Your React app registers tools using `webmcp-react`. The extension picks them up from `navigator.modelContext`, aggregates tools across all active tabs, and exposes them through a local MCP server that clients connect to over stdio.
+Your React app registers tools using `webmcp-react`. The extension picks them up via `navigator.modelContextTesting`, aggregates tools across all active tabs, and exposes them through a local MCP server that clients connect to over stdio.
 
 ![Extension architecture](./extension-architecture.svg)
 
@@ -97,7 +97,7 @@ After rebuilding, click the reload button on `chrome://extensions/` to pick up c
 ```
 src/
 ├── background.ts          # Service worker — manages tabs, tools, WebSocket
-├── content-main.ts        # Main world script — reads navigator.modelContext
+├── content-main.ts        # Main world script — reads navigator.modelContextTesting
 ├── content-isolated.ts    # Isolated world script — bridges messages
 ├── types.ts               # Shared type definitions
 ├── popup/
