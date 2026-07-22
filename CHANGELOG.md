@@ -4,6 +4,19 @@ All notable changes to `webmcp-react` are documented here. The format is based o
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Changed
+
+- **Already-aborted `AbortSignal` now rejects.** The polyfill's `registerTool` rejects with the
+  signal's abort reason when handed an already-aborted signal, matching WebMCP spec PR #202 and
+  native Chrome 152.0.7943.0. Previously it resolved as a no-op, matching native Chrome 151.
+  Validation errors still take precedence over the aborted-signal check. `useMcpTool` is
+  unaffected: it never passes a pre-aborted signal, and `AbortError` rejections are already
+  treated as lifecycle teardown.
+- Docs and npm keywords now reference `document.modelContext`; `navigator.modelContext` was
+  removed from Chrome as of 152.0.7943.0 (the library itself migrated in 0.2.0).
+
 ## 0.2.0
 
 Realigns the library with the current [WebMCP](https://github.com/webmachinelearning/webmcp)

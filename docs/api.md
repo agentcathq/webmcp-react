@@ -129,6 +129,6 @@ document.modelContext.ontoolchange = () => { /* ... */ };
 - a non-serializable `inputSchema`;
 - an `exposedTo` entry that is not a parseable, potentially-trustworthy origin.
 
-An already-aborted `AbortSignal` does **not** reject: `registerTool` resolves as a no-op (registration is skipped), matching native Chrome 151. _(WebMCP spec PR #202 specifies rejection; native had not shipped that as of Chrome 151. Revisit if native changes.)_
+An already-aborted `AbortSignal` also rejects: `registerTool` rejects with the signal's abort reason and skips registration, matching the WebMCP spec and native Chrome 152+. Validation errors take precedence — the aborted-signal check runs after the checks above.
 
 The hook routes these rejections into `state.error` and fires `onError`, except `AbortError` (lifecycle teardown), which is ignored.
