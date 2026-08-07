@@ -1,3 +1,6 @@
 packages:
   - "examples/*"
   - "extension"
+allowBuilds:
+  esbuild: true
+  sharp: true
