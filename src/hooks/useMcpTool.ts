@@ -257,9 +257,9 @@ export function useMcpTool(
     };
 
     try {
-      // Native Chrome (<=151) returns undefined and throws synchronously on error;
-      // the spec (#200) and our polyfill return a Promise<undefined> that rejects.
-      // Handle both shapes.
+      // Native Chrome <=151 returns undefined and throws synchronously on error;
+      // the spec, native Chrome 152+, and our polyfill return a Promise<undefined>
+      // that rejects. Handle both shapes.
       const result: unknown = mc.registerTool(descriptor, {
         signal: controller.signal,
         ...(cfg.exposedTo && { exposedTo: cfg.exposedTo }),

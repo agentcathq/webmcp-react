@@ -29,7 +29,7 @@
     "react",
     "hooks",
     "ai",
-    "navigator.modelContext",
+    "document.modelContext",
     "w3c"
   ],
   "author": "Kashish Hora",
