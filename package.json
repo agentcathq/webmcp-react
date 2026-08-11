@@ -68,19 +68,19 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.0.0",
-    "@testing-library/jest-dom": "^6.6.3",
-    "@testing-library/react": "^16.1.0",
-    "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
     "husky": "^9.1.7",
-    "jsdom": "^26.0.0",
-    "lint-staged": "^16.2.7",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "tsup": "^8.4.0",
-    "typescript": "^5.7.0",
-    "vitest": "^3.2.6",
-    "zod": "^3.24.0"
+    "jsdom": "^26.1.0",
+    "lint-staged": "^16.4.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.7",
+    "zod": "^3.25.76"
   },
   "lint-staged": {
     "*.{ts,tsx}": [
@@ -93,6 +93,11 @@
   "pnpm": {
     "onlyBuiltDependencies": [
       "esbuild"
-    ]
+    ],
+    "overrides": {
+      "ip-address": ">=10.3.1",
+      "postcss": ">=8.5.18",
+      "sharp": ">=0.35.0"
+    }
   }
 }
