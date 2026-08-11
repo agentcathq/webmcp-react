@@ -85,8 +85,9 @@ async function runSelfTest(log: (line: string) => void) {
       : `FAIL: add ${addRaw}`,
   );
 
-  // Open spec question: does registerTool with an already-aborted signal
-  // reject (our current assumption) or resolve? Probe the live backend.
+  // Spec + native Chrome 152+: registerTool with an already-aborted signal
+  // rejects with the signal's abort reason. Older native (<=151) resolved as a
+  // no-op instead.
   try {
     const result = await mc.registerTool(
       {
@@ -96,10 +97,10 @@ async function runSelfTest(log: (line: string) => void) {
       },
       { signal: AbortSignal.abort(new DOMException("probe", "AbortError")) },
     );
-    log(`INFO: already-aborted register RESOLVED (value=${String(result)})`);
+    log(`INFO: already-aborted register RESOLVED (value=${String(result)}; pre-152 native behavior)`);
   } catch (err) {
     const name = err instanceof Error ? err.name : String(err);
-    log(`INFO: already-aborted register REJECTED (${name})`);
+    log(`PASS: already-aborted register rejects (${name})`);
   }
 }
 
