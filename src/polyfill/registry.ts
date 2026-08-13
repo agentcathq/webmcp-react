@@ -64,9 +64,9 @@ export function createRegistry(): RegistryInternal {
         }
       }
       if (options?.signal?.aborted) {
-        // Native Chrome (verified 151) resolves without registering when handed an
-        // already-aborted signal; match that rather than rejecting.
-        return Promise.resolve(undefined);
+        // Checked after validation — the spec gives validation errors precedence
+        // over an aborted signal, which rejects with its abort reason.
+        return Promise.reject(options.signal.reason);
       }
 
       tools.set(tool.name, {

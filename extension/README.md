@@ -6,7 +6,7 @@ A Chrome extension that bridges tools registered on `document.modelContext` to d
 
 ## How it works
 
-Your React app registers tools using `webmcp-react`. The extension picks them up via `navigator.modelContextTesting`, aggregates tools across all active tabs, and exposes them through a local MCP server that clients connect to over stdio.
+Your React app registers tools using `webmcp-react`. The extension picks them up from `document.modelContext` (via the `navigator.modelContextTesting` consumer API), aggregates tools across all active tabs, and exposes them through a local MCP server that clients connect to over stdio.
 
 ![Extension architecture](./extension-architecture.svg)
 

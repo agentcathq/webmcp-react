@@ -30,6 +30,6 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",
-    "ws": "^8.18.0"
+    "ws": "^8.21.0"
   }
 }

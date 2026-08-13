@@ -1,6 +1,6 @@
 # Privacy Policy — WebMCP Bridge
 
-**Last updated:** March 2026
+**Last updated:** July 2026
 
 ## Overview
 
