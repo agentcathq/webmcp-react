@@ -26,10 +26,11 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
   return { tools: registry.listMcpTools() };
 });
 
-server.setRequestHandler(CallToolRequestSchema, async (request) => {
+server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
   return registry.callTool(
     request.params.name,
     (request.params.arguments as Record<string, unknown>) ?? {},
+    extra.signal,
   );
 });
 

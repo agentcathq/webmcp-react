@@ -44,6 +44,16 @@ chrome.runtime.onMessage.addListener(
         );
         sendResponse({ ok: true });
         break;
+      case "CANCEL_TOOL":
+        window.postMessage(
+          {
+            type: "WEBMCP_CANCEL_TOOL",
+            requestId: message.requestId,
+          } satisfies PageMessage,
+          window.location.origin,
+        );
+        sendResponse({ ok: true });
+        break;
       case "REQUEST_TOOLS":
         window.postMessage(
           { type: "WEBMCP_REQUEST_TOOLS" } satisfies PageMessage,

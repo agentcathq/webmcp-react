@@ -165,6 +165,11 @@ function handleMessage(event: MessageEvent<PageMessage>) {
         });
       break;
     }
+    case "WEBMCP_CANCEL_TOOL": {
+      pendingExecutions.get(data.requestId)?.abort();
+      pendingExecutions.delete(data.requestId);
+      break;
+    }
     case "WEBMCP_REQUEST_TOOLS": {
       refreshTools();
       break;
