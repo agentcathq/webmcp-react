@@ -116,7 +116,9 @@ export function useMcpTool(config: McpToolConfigZod | McpToolConfigJsonSchema): 
         validatedInput = parseZodInput((currentConfig as McpToolConfigZod).input, validatedInput);
       }
 
-      const result = await handlerRef.current(validatedInput as Record<string, unknown>);
+      const result = await handlerRef.current(validatedInput as Record<string, unknown>, {
+        signal: new AbortController().signal,
+      });
 
       if (isMountedRef.current) {
         inFlightCountRef.current--;
@@ -200,7 +202,9 @@ export function useMcpTool(config: McpToolConfigZod | McpToolConfigJsonSchema): 
             validatedArgs = parseZodInput((currentConfig as McpToolConfigZod).input, args);
           }
 
-          const result = await handlerRef.current(validatedArgs as Record<string, unknown>);
+          const result = await handlerRef.current(validatedArgs as Record<string, unknown>, {
+            signal: new AbortController().signal,
+          });
 
           if (isMountedRef.current) {
             inFlightCountRef.current--;

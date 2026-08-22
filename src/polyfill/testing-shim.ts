@@ -1,4 +1,9 @@
-import type { ModelContextTesting, ModelContextTestingExecuteToolOptions } from "../types";
+import type {
+  CallToolResult,
+  MaybePromise,
+  ModelContextTesting,
+  ModelContextTestingExecuteToolOptions,
+} from "../types";
 import type { RegistryInternal } from "./registry";
 import { validateArgs } from "./validation";
 
@@ -60,7 +65,12 @@ export function createTestingShim(registry: RegistryInternal): ModelContextTesti
       }
 
       try {
-        const resultPromise = Promise.resolve(tool.execute(parsed as Record<string, unknown>));
+        // This deprecated shim predates the two-argument execute(input, options)
+        // signature and intentionally keeps calling with a single argument.
+        const legacyExecute = tool.execute as (
+          input: Record<string, unknown>,
+        ) => MaybePromise<CallToolResult>;
+        const resultPromise = Promise.resolve(legacyExecute(parsed as Record<string, unknown>));
 
         const result = abortPromise
           ? await Promise.race([abortPromise, resultPromise])
