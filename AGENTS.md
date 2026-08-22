@@ -59,7 +59,7 @@ These patterns look like they could be simplified but exist for specific reasons
 
 **Schema fingerprinting** (`schemaFingerprint` in `utils/schema.ts`, used by `useMcpTool.ts`): useEffect deps use string fingerprints of schemas, not object references, to prevent infinite re-registration loops when schema objects are recreated each render. Don't switch to direct object comparison.
 
-**Dual execution paths**: Tools execute via `execute()` (internal/UI calls) and via the testing shim (external MCP client calls). Both paths update the same reactive state and fire the same callbacks. Changes to one path must be mirrored in the other.
+**Dual execution paths**: Tools execute via `execute()` (internal/UI calls) and via `document.modelContext.executeTool()` (external MCP client calls, native or polyfilled). Both paths update the same reactive state and fire the same callbacks. Changes to one path must be mirrored in the other.
 
 **Ref-wrapped config** (`configRef`, `handlerRef`, etc.): Refs wrap mutable config so the registration useEffect doesn't re-run on every render. These are not missed dependencies — they're intentional stability optimizations.
 
@@ -81,10 +81,10 @@ mirrored — they share `runHandler` in `useMcpTool.ts` and `runTool` in
 - **Framework**: Vitest + React Testing Library + jsdom
 - **Location**: `__tests__/` directories adjacent to source files
 - **StrictMode**: All tests must pass under React StrictMode (double-mount behavior)
-- **Testing shim**: `polyfill/testing-shim.ts` simulates external MCP client calls — use it in tests to verify the full registration → execution → state update cycle
+- **External-call path**: `document.modelContext.getTools()` / `executeTool()` is the consumer API — use it in tests to verify the full registration → execution → state update cycle. `navigator.modelContextTesting` (`polyfill/testing-shim.ts`) delegates to the same engine but is deprecated and is removed in 0.4.0; don't write new tests against it
 - **Coverage areas**: Registration lifecycle, execution state, error handling, input validation, SSR safety, StrictMode compatibility
 
-When adding features, write tests that cover both execution paths (direct `execute()` and testing shim `executeTool()`).
+When adding features, write tests that cover both execution paths (direct `execute()` and `document.modelContext.executeTool()`).
 
 ## Code Style
 
