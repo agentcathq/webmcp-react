@@ -49,6 +49,13 @@ function AddTool() {
   return null;
 }
 
+/** Extracts a stable name from a caught value, DOMException-safe. */
+function errName(err: unknown): string {
+  return typeof err === "object" && err !== null && "name" in err
+    ? String((err as { name: unknown }).name)
+    : String(err);
+}
+
 async function runSelfTest(log: (line: string) => void) {
   // Report which implementation backs document.modelContext.
   const mc = document.modelContext;
@@ -111,7 +118,9 @@ async function runSelfTest(log: (line: string) => void) {
       { signal: reg.signal },
     );
     const probeTool = (await mc.getTools()).find((x) => x.name === "signal_probe");
-    if (probeTool) {
+    if (!probeTool) {
+      log("FAIL: signal_probe not listed");
+    } else {
       await mc.executeTool(probeTool, "{}");
       log(
         sawSignal instanceof AbortSignal
@@ -123,6 +132,9 @@ async function runSelfTest(log: (line: string) => void) {
   }
 
   // Probe: caller abort → tool signal aborts (generic AbortError), caller rejects.
+  // The synthetic tool has a bounded 500ms fallback so a runtime that never
+  // forwards a signal into execute() still settles instead of hanging this
+  // self-test forever.
   {
     const reg = new AbortController();
     let toolAborted: string | null = null;
@@ -131,8 +143,12 @@ async function runSelfTest(log: (line: string) => void) {
         name: "abort_flight_probe",
         description: "Probe mid-flight cancellation.",
         execute: (_input: Record<string, unknown>, options?: { signal?: AbortSignal }) =>
-          new Promise((_resolve, reject) => {
+          new Promise((resolve, reject) => {
+            const timer = setTimeout(() => {
+              resolve({ content: [{ type: "text", text: "no-signal-timeout" }] });
+            }, 500);
             options?.signal?.addEventListener("abort", () => {
+              clearTimeout(timer);
               toolAborted =
                 options.signal?.reason instanceof DOMException
                   ? options.signal.reason.name
@@ -144,15 +160,24 @@ async function runSelfTest(log: (line: string) => void) {
       { signal: reg.signal },
     );
     const probeTool = (await mc.getTools()).find((x) => x.name === "abort_flight_probe");
-    if (probeTool) {
+    if (!probeTool) {
+      log("FAIL: abort_flight_probe not listed");
+    } else {
       const controller = new AbortController();
       const pending = mc.executeTool(probeTool, "{}", { signal: controller.signal });
       controller.abort(new DOMException("probe cancel", "AbortError"));
       await pending.then(
-        () => log("FAIL: aborted executeTool resolved"),
+        (raw) =>
+          log(
+            String(raw).includes("no-signal-timeout")
+              ? "INFO: aborted executeTool did not reject (no signal forwarded; Chrome <=152)"
+              : `FAIL: aborted executeTool resolved (${raw})`,
+          ),
         (err: unknown) =>
           log(
-            `PASS: aborted executeTool rejected (caller: ${(err as { name?: string })?.name}, tool: ${toolAborted ?? "no signal (Chrome <=152)"})`,
+            toolAborted
+              ? `PASS: aborted executeTool rejected (caller: ${errName(err)}, tool: ${toolAborted})`
+              : `INFO: aborted executeTool rejected but tool-side signal never fired (caller: ${errName(err)}; no signal forwarded; Chrome <=152)`,
           ),
       );
     }
@@ -174,7 +199,10 @@ async function runSelfTest(log: (line: string) => void) {
       { signal: reg.signal },
     );
     const probeTool = (await mc.getTools()).find((x) => x.name === "unregister_probe");
-    if (probeTool) {
+    if (!probeTool) {
+      log("FAIL: unregister_probe not listed");
+      reg.abort();
+    } else {
       const pending = mc.executeTool(probeTool, "{}");
       reg.abort(); // unregister while in flight
       await pending.then(
@@ -186,7 +214,7 @@ async function runSelfTest(log: (line: string) => void) {
           ),
         (err: unknown) =>
           log(
-            `INFO: in-flight execution rejected on unregister (${(err as { name?: string })?.name}; pre-153.0.8008 behavior)`,
+            `INFO: in-flight execution rejected on unregister (${errName(err)}; pre-153.0.8008 behavior)`,
           ),
       );
     }
@@ -206,8 +234,7 @@ async function runSelfTest(log: (line: string) => void) {
     );
     log(`INFO: already-aborted register RESOLVED (value=${String(result)}; pre-152 native behavior)`);
   } catch (err) {
-    const name = err instanceof Error ? err.name : String(err);
-    log(`PASS: already-aborted register rejects (${name})`);
+    log(`PASS: already-aborted register rejects (${errName(err)})`);
   }
 }
 
