@@ -10,7 +10,7 @@ WebMCP Bridge is an open-source Chrome extension that connects tools registered 
 
 The extension does not collect any personal data, browsing history, or identifying information.
 
-It reads **tool registrations** exposed by web pages through the standard `navigator.modelContextTesting` API. These are developer-defined function names, descriptions, and input schemas — not user content or page data.
+It reads **tool registrations** exposed by web pages through the standard `document.modelContext` API (`getTools()` / `executeTool()`). These are developer-defined function names, descriptions, and input schemas — not user content or page data. Pages using webmcp-react ≤1.0.0 are still supported via the deprecated `navigator.modelContextTesting` shim.
 
 ## How is data transmitted?
 
@@ -25,7 +25,7 @@ The extension uses Chrome's `storage.local` API to persist your **domain activat
 | Permission | Why it's needed |`
 | --- | --- |
 | `tabs` | Read the URL and title of active tabs to display them in the popup and namespace tools by tab |
-| `scripting` | Inject content scripts that read tool registrations from `navigator.modelContextTesting` |
+| `scripting` | Inject content scripts that read tool registrations from `document.modelContext` |
 | `activeTab` | Inject scripts into the current tab when you click "Until reload" |
 | `storage` | Persist your domain activation preferences across browser sessions |
 | Host permissions (optional, per-domain) | Requested at runtime when you enable "Always on" for a site — allows the extension to auto-inject on future visits to that domain |

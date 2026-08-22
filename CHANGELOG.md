@@ -4,6 +4,20 @@ All notable changes to `webmcp-react` are documented here. The format is based o
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Extension
+
+- The bridge extension now discovers and executes tools via
+  `document.modelContext.getTools()` / `executeTool()` (native Chrome 150+ and the
+  webmcp-react 1.1.0 polyfill), falling back to the deprecated
+  `navigator.modelContextTesting` for pages on webmcp-react ≤1.0.0. Native Chrome removed
+  `modelContextTesting` in 152.0.7940.0, which had left the extension unable to see tools
+  on native Chrome.
+- MCP client cancellations (`notifications/cancelled`) are forwarded end-to-end: MCP SDK →
+  WebSocket `CANCEL_TOOL` → background → content scripts → `executeTool`'s `AbortSignal`,
+  aborting the tool handler's execution signal.
+
 ## 1.1.0
 
 Tracks Chrome 152–154 WebMCP changes: execution AbortSignals, the

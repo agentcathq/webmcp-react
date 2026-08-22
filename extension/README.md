@@ -6,7 +6,9 @@ A Chrome extension that bridges tools registered on `document.modelContext` to d
 
 ## How it works
 
-Your React app registers tools using `webmcp-react`. The extension picks them up from `document.modelContext` (via the `navigator.modelContextTesting` consumer API), aggregates tools across all active tabs, and exposes them through a local MCP server that clients connect to over stdio.
+Your React app registers tools using `webmcp-react`. The extension picks them up from `document.modelContext` (the `getTools()` / `executeTool()` consumer API), aggregates tools across all active tabs, and exposes them through a local MCP server that clients connect to over stdio. Pages using webmcp-react ≤1.0.0 are still supported via the deprecated `navigator.modelContextTesting` shim.
+
+- MCP client cancellations are forwarded to the page and abort the tool's execution `AbortSignal`.
 
 ![Extension architecture](./extension-architecture.svg)
 
@@ -97,7 +99,7 @@ After rebuilding, click the reload button on `chrome://extensions/` to pick up c
 ```
 src/
 ├── background.ts          # Service worker — manages tabs, tools, WebSocket
-├── content-main.ts        # Main world script — reads navigator.modelContextTesting
+├── content-main.ts        # Main world script — reads document.modelContext
 ├── content-isolated.ts    # Isolated world script — bridges messages
 ├── types.ts               # Shared type definitions
 ├── popup/
@@ -111,13 +113,13 @@ src/
 
 ### Message flow
 
-1. **content-main.ts** polls `navigator.modelContextTesting` for tool changes
+1. **content-main.ts** polls `document.modelContext` for tool changes (falling back to `navigator.modelContextTesting` for webmcp-react ≤1.0.0 pages)
 2. Sends tools to **content-isolated.ts** via `window.postMessage`
 3. Isolated script forwards to **background.ts** via `chrome.runtime.sendMessage`
 4. Background aggregates tools from all tabs and syncs with **mcp-server** over WebSocket (`ws://127.0.0.1:12315`)
 5. MCP server exposes tools to AI clients over **stdio**
 
-Tool execution flows in reverse: AI client → MCP server → background → content scripts → page handler → result back through the chain.
+Tool execution flows in reverse: AI client → MCP server → background → content scripts → page handler → result back through the chain. Cancelling a call at the MCP client walks the same path back to the page, aborting the handler's execution `AbortSignal`.
 
 ## Troubleshooting
 
