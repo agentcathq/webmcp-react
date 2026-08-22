@@ -3,9 +3,11 @@ import { z } from "zod";
 import { MISSING_PROVIDER, WebMCPContext } from "../context";
 import type {
   CallToolResult,
+  ExecuteToolOptions,
   McpToolConfigJsonSchema,
   McpToolConfigZod,
   ToolDescriptor,
+  ToolExecuteCallbackOptions,
   ToolExecutionState,
   UseMcpToolReturn,
 } from "../types";
@@ -98,57 +100,78 @@ export function useMcpTool(
     };
   }, []);
 
-  const execute = useCallback(async (input?: Record<string, unknown>): Promise<CallToolResult> => {
-    inFlightCountRef.current++;
-    setState((prev) => ({ ...prev, isExecuting: true, error: null }));
-
-    try {
-      let validatedInput: Record<string, unknown> = input ?? {};
-      const currentConfig = configRef.current;
-      const currentIsZod = "input" in currentConfig && currentConfig.input instanceof z.ZodObject;
-
-      if (currentIsZod) {
-        validatedInput = (currentConfig as McpToolConfigZod<z.ZodRawShape>).input.parse(
-          validatedInput,
-        );
-      }
-
-      const result = await handlerRef.current(validatedInput as Record<string, unknown>, {
-        signal: new AbortController().signal,
-      });
-
+  const runHandler = useCallback(
+    async (
+      input: Record<string, unknown>,
+      signal: AbortSignal,
+      opts: { throwOnError: boolean },
+    ): Promise<CallToolResult> => {
+      inFlightCountRef.current++;
       if (isMountedRef.current) {
-        inFlightCountRef.current--;
-        setState((prev) => ({
-          isExecuting: inFlightCountRef.current > 0,
-          lastResult: result,
-          error: null,
-          executionCount: prev.executionCount + 1,
-        }));
-      } else {
-        inFlightCountRef.current--;
+        setState((prev) => ({ ...prev, isExecuting: true, error: null }));
       }
 
-      onSuccessRef.current?.(result);
-      return result;
-    } catch (thrown) {
-      const error = thrown instanceof Error ? thrown : new Error(String(thrown));
+      try {
+        let validatedInput = input;
+        const currentConfig = configRef.current;
+        const currentIsZod = "input" in currentConfig && currentConfig.input instanceof z.ZodObject;
 
-      if (isMountedRef.current) {
+        if (currentIsZod) {
+          validatedInput = (currentConfig as McpToolConfigZod<z.ZodRawShape>).input.parse(input);
+        }
+
+        const result = await handlerRef.current(validatedInput, { signal });
+
         inFlightCountRef.current--;
-        setState((prev) => ({
-          ...prev,
-          isExecuting: inFlightCountRef.current > 0,
-          error,
-        }));
-      } else {
+        if (isMountedRef.current) {
+          setState((prev) => ({
+            isExecuting: inFlightCountRef.current > 0,
+            lastResult: result,
+            error: null,
+            executionCount: prev.executionCount + 1,
+          }));
+        }
+
+        onSuccessRef.current?.(result);
+        return result;
+      } catch (thrown) {
+        const error = normalizeError(thrown);
         inFlightCountRef.current--;
+
+        if (signal.aborted) {
+          // Cancellation, not error: the agent/user aborted this execution.
+          // Leave error/lastResult untouched and skip onError.
+          if (isMountedRef.current) {
+            setState((prev) => ({ ...prev, isExecuting: inFlightCountRef.current > 0 }));
+          }
+        } else {
+          if (isMountedRef.current) {
+            setState((prev) => ({
+              ...prev,
+              isExecuting: inFlightCountRef.current > 0,
+              error,
+            }));
+          }
+          onErrorRef.current?.(error);
+        }
+
+        if (opts.throwOnError) throw error;
+        return {
+          content: [{ type: "text", text: `Error: ${error.message}` }],
+          isError: true,
+        };
       }
+    },
+    [],
+  );
 
-      onErrorRef.current?.(error);
-      throw error;
-    }
-  }, []);
+  const execute = useCallback(
+    (input?: Record<string, unknown>, options?: ExecuteToolOptions): Promise<CallToolResult> =>
+      runHandler(input ?? {}, options?.signal ?? new AbortController().signal, {
+        throwOnError: true,
+      }),
+    [runHandler],
+  );
 
   const reset = useCallback(() => {
     setState(INITIAL_STATE);
@@ -184,62 +207,10 @@ export function useMcpTool(
       ...(resolvedInputSchema && { inputSchema: resolvedInputSchema }),
       ...(resolvedOutputSchema && { outputSchema: resolvedOutputSchema }),
       ...(cfg.annotations && { annotations: cfg.annotations }),
-      execute: async (args: Record<string, unknown>): Promise<CallToolResult> => {
-        inFlightCountRef.current++;
-        if (isMountedRef.current) {
-          setState((prev) => ({ ...prev, isExecuting: true, error: null }));
-        }
-
-        try {
-          let validatedArgs = args;
-          const currentConfig = configRef.current;
-          const currentIsZod =
-            "input" in currentConfig && currentConfig.input instanceof z.ZodObject;
-
-          if (currentIsZod) {
-            validatedArgs = (currentConfig as McpToolConfigZod<z.ZodRawShape>).input.parse(args);
-          }
-
-          const result = await handlerRef.current(validatedArgs as Record<string, unknown>, {
-            signal: new AbortController().signal,
-          });
-
-          if (isMountedRef.current) {
-            inFlightCountRef.current--;
-            setState((prev) => ({
-              isExecuting: inFlightCountRef.current > 0,
-              lastResult: result,
-              error: null,
-              executionCount: prev.executionCount + 1,
-            }));
-          } else {
-            inFlightCountRef.current--;
-          }
-
-          onSuccessRef.current?.(result);
-          return result;
-        } catch (thrown) {
-          const error = thrown instanceof Error ? thrown : new Error(String(thrown));
-
-          if (isMountedRef.current) {
-            inFlightCountRef.current--;
-            setState((prev) => ({
-              ...prev,
-              isExecuting: inFlightCountRef.current > 0,
-              error,
-            }));
-          } else {
-            inFlightCountRef.current--;
-          }
-
-          onErrorRef.current?.(error);
-
-          return {
-            content: [{ type: "text", text: `Error: ${error.message}` }],
-            isError: true,
-          };
-        }
-      },
+      execute: (args: Record<string, unknown>, options?: ToolExecuteCallbackOptions) =>
+        runHandler(args, options?.signal ?? new AbortController().signal, {
+          throwOnError: false,
+        }),
     };
 
     const controller = new AbortController();
