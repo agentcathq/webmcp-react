@@ -36,7 +36,7 @@ var ToolRegistry = class {
       inputSchema: t.inputSchema ?? { type: "object", properties: {} }
     }));
   }
-  async callTool(name, args) {
+  async callTool(name, args, signal) {
     const match = NAMESPACED_RE.exec(name);
     if (!match) {
       return {
@@ -67,17 +67,43 @@ var ToolRegistry = class {
         ]
       };
     }
+    if (signal?.aborted) {
+      const err = new Error("Tool call aborted by client");
+      err.name = "AbortError";
+      throw err;
+    }
     const requestId = crypto.randomUUID();
     const ws = this.ws;
     return new Promise((resolve, reject) => {
+      const onAbort = () => {
+        const pending = this.pendingCalls.get(requestId);
+        if (!pending) return;
+        clearTimeout(pending.timer);
+        this.pendingCalls.delete(requestId);
+        if (ws.readyState === ws.OPEN) {
+          ws.send(
+            JSON.stringify({ type: "CANCEL_TOOL", requestId })
+          );
+        }
+        const err = new Error("Tool call aborted by client");
+        err.name = "AbortError";
+        reject(err);
+      };
+      signal?.addEventListener("abort", onAbort, { once: true });
       const timer = setTimeout(() => {
+        signal?.removeEventListener("abort", onAbort);
         this.pendingCalls.delete(requestId);
         resolve({
           isError: true,
           content: [{ type: "text", text: `Tool call "${name}" timed out after ${CALL_TIMEOUT}ms` }]
         });
       }, CALL_TIMEOUT);
-      this.pendingCalls.set(requestId, { resolve, reject, timer });
+      this.pendingCalls.set(requestId, {
+        resolve,
+        reject,
+        timer,
+        cleanup: () => signal?.removeEventListener("abort", onAbort)
+      });
       const message = {
         type: "CALL_TOOL",
         requestId,
@@ -107,6 +133,7 @@ var ToolRegistry = class {
         const pending = this.pendingCalls.get(data.requestId);
         if (!pending) break;
         clearTimeout(pending.timer);
+        pending.cleanup?.();
         this.pendingCalls.delete(data.requestId);
         if (data.error) {
           pending.resolve({
@@ -135,6 +162,7 @@ var ToolRegistry = class {
   clearConnection() {
     for (const [requestId, pending] of this.pendingCalls) {
       clearTimeout(pending.timer);
+      pending.cleanup?.();
       pending.resolve({
         isError: true,
         content: [{ type: "text", text: "Extension disconnected. Tool call aborted." }]
@@ -168,10 +196,11 @@ var server = new Server(
 server.setRequestHandler(ListToolsRequestSchema, async () => {
   return { tools: registry.listMcpTools() };
 });
-server.setRequestHandler(CallToolRequestSchema, async (request) => {
+server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
   return registry.callTool(
     request.params.name,
-    request.params.arguments ?? {}
+    request.params.arguments ?? {},
+    extra.signal
   );
 });
 registry.onToolsChanged(() => {
