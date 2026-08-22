@@ -4,6 +4,7 @@ import { isPotentiallyTrustworthyOrigin, isValidToolName } from "./validation";
 export interface RegistryInternal {
   registerTool(tool: ToolDescriptor, options?: RegisterToolOptions): Promise<undefined>;
   getTools(): ReadonlyMap<string, ToolDescriptor>;
+  get(name: string): ToolDescriptor | undefined;
   addChangeListener(callback: () => void): () => void;
 }
 
@@ -94,6 +95,10 @@ export function createRegistry(): RegistryInternal {
 
     getTools(): ReadonlyMap<string, ToolDescriptor> {
       return tools;
+    },
+
+    get(name: string): ToolDescriptor | undefined {
+      return tools.get(name);
     },
 
     addChangeListener(callback: () => void): () => void {
