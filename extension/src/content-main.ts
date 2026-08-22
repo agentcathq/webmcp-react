@@ -49,7 +49,8 @@ function createModelContextApi(mc: PageModelContext): PageToolApi {
       try {
         return await executeTool(tool, argsJson, { signal });
       } catch (err) {
-        // Future Chrome may require an object instead of a JSON string.
+        // Future Chrome may take an object instead of a JSON string. A
+        // TypeError here is argument conversion, so the tool never ran.
         if (err instanceof TypeError) {
           return await executeTool(tool, JSON.parse(argsJson) as object, { signal });
         }
@@ -189,18 +190,24 @@ const POLL_TIMEOUT = 10_000;
 const WATCH_INTERVAL = 1_000;
 let elapsed = 0;
 
+function startWatch() {
+  setInterval(resolveApi, WATCH_INTERVAL);
+}
+
 const pollTimer = setInterval(() => {
   elapsed += POLL_INTERVAL;
 
   if (resolveApi()) {
     clearInterval(pollTimer);
     if (DEBUG) console.log("[WebMCP Bridge] WebMCP API found");
-    setInterval(resolveApi, WATCH_INTERVAL);
+    startWatch();
     return;
   }
 
   if (elapsed >= POLL_TIMEOUT) {
     clearInterval(pollTimer);
-    if (DEBUG) console.log("[WebMCP Bridge] no WebMCP API found after 10s, giving up");
+    if (DEBUG) console.log("[WebMCP Bridge] no WebMCP API found after 10s, watching");
+    // A provider can still mount later, so keep watching.
+    startWatch();
   }
 }, POLL_INTERVAL);

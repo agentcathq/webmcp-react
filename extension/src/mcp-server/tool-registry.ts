@@ -115,6 +115,11 @@ export class ToolRegistry {
       const timer = setTimeout(() => {
         signal?.removeEventListener("abort", onAbort);
         this.pendingCalls.delete(requestId);
+        if (ws.readyState === ws.OPEN) {
+          ws.send(
+            JSON.stringify({ type: "CANCEL_TOOL", requestId } satisfies WsCancelToolRequest),
+          );
+        }
         resolve({
           isError: true,
           content: [{ type: "text", text: `Tool call "${name}" timed out after ${CALL_TIMEOUT}ms` }],
