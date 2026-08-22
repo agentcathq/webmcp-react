@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { CallToolResult, ToolDescriptor } from "../../types";
+import type { CallToolResult, ToolDescriptor, ToolExecuteCallbackOptions } from "../../types";
 import { _resetWarnings } from "../../utils/warn";
 import { createRegistry } from "../registry";
 import { createTestingShim } from "../testing-shim";
@@ -55,7 +55,10 @@ describe("createTestingShim", () => {
 
   describe("executeTool", () => {
     it("calls handler with parsed args", async () => {
-      const handler = vi.fn(async () => makeResult());
+      const handler = vi.fn(
+        async (_input: Record<string, unknown>, _options: ToolExecuteCallbackOptions) =>
+          makeResult(),
+      );
       const { shim } = setup([makeTool({ execute: handler })]);
 
       await shim.executeTool("test_tool", '{"query":"hello"}');

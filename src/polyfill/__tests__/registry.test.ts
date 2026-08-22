@@ -148,7 +148,7 @@ describe("createRegistry", () => {
     const tool = makeTool();
     await registry.registerTool(tool);
 
-    (tool as Record<string, unknown>).description = "mutated";
+    (tool as unknown as Record<string, unknown>).description = "mutated";
     const stored = registry.getTools().get("test_tool");
     expect(stored?.description).toBe("A test tool");
   });

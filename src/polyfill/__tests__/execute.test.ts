@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { CallToolResult, ToolDescriptor } from "../../types";
+import type { CallToolResult, ToolDescriptor, ToolExecuteCallbackOptions } from "../../types";
 import { runTool } from "../execute";
 
 function makeTool(overrides?: Partial<ToolDescriptor>): ToolDescriptor {
@@ -33,7 +33,9 @@ describe("runTool", () => {
   });
 
   it("accepts an object input without re-parsing", async () => {
-    const execute = vi.fn(async () => OK);
+    const execute = vi.fn(
+      async (_input: Record<string, unknown>, _options: ToolExecuteCallbackOptions) => OK,
+    );
     await runTool(makeTool({ execute }), { query: "hi" });
     expect(execute.mock.calls[0][0]).toEqual({ query: "hi" });
   });

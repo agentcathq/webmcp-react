@@ -1,0 +1,16 @@
+{
+  // Type-checks the test files that the root config excludes, so the
+  // compile-time assertions in src/__tests__/type-compat.test.ts are a real gate.
+  // Tests need a wider lib (Array.prototype.at) and vitest's globals.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["vitest/globals"]
+  },
+  "include": ["src"],
+  "exclude": ["node_modules", "dist"]
+}

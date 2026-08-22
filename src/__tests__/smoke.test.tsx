@@ -156,7 +156,7 @@ describe("smoke: executeTool through testing shim", () => {
             name: "zod_greet",
             description: "Zod greeter",
             input: z.object({ name: z.string() }),
-            handler: async ({ name }) => makeResult(`hello ${name}`),
+            handler: async ({ name }: Record<string, unknown>) => makeResult(`hello ${name}`),
           }}
         />
       </WebMCPProvider>,
