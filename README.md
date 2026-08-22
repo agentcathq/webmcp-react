@@ -40,7 +40,7 @@ function SearchTool() {
     name: "search",
     description: "Search the catalog",
     input: z.object({ query: z.string() }),
-    handler: async ({ query }, { signal }) => ({
+    handler: async ({ query }) => ({
       content: [{ type: "text", text: `Results for: ${query}` }],
     }),
   });
