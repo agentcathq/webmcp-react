@@ -229,7 +229,7 @@ Add to the existing `export type` block: `ExecuteToolOptions`, `ModelContextGetT
 - [ ] **Step 5: Run typecheck and tests**
 
 Run: `pnpm typecheck && pnpm test -- src/__tests__/type-compat.test.ts`
-Expected: typecheck PASS (the hook still compiles because one-arg implementations are assignable to two-arg types); type-compat test PASS. If `pnpm typecheck` reports errors in `src/hooks/useMcpTool.ts` about `execute`, they are pre-existing-arity related and must NOT appear — the descriptor's inline `execute` has fewer params than the type requires, which TypeScript allows. Any other error: fix before proceeding.
+Expected: type-compat test PASS. `pnpm typecheck` will report two kinds of errors that you must bridge minimally (one-arg *implementations* are assignable to two-arg types, but one-arg *calls* of a two-arg function type are not): (a) `src/hooks/useMcpTool.ts` calls `handlerRef.current(validatedInput)` with one argument in two places — change both calls to `handlerRef.current(validatedInput, { signal: new AbortController().signal })` (Task 2 replaces this with the real signal); (b) `src/polyfill/testing-shim.ts` calls `tool.execute(parsed)` with one argument — cast to a one-arg legacy type at that call site (`tool.execute as (input: Record<string, unknown>) => MaybePromise<CallToolResult>`) so the existing arity test keeps passing (Task 5 rewrites the shim). No other behavior changes in those files. Any other error: fix before proceeding.
 
 - [ ] **Step 6: Run the full test suite to catch regressions**
 
