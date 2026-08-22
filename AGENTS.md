@@ -34,7 +34,8 @@ src/                    ← core library (your focus)
 ├── polyfill/           ← document.modelContext polyfill
 │   ├── index.ts        ← installPolyfill / cleanupPolyfill + polyfill marker
 │   ├── registry.ts     ← in-memory tool storage
-│   ├── testing-shim.ts ← simulates MCP client calls
+│   ├── execute.ts      ← shared execution engine (signals, serialization, errors)
+│   ├── testing-shim.ts ← DEPRECATED wrapper over execute.ts (removed in 2.0.0)
 │   └── validation.ts   ← input validation against JSON Schema
 └── utils/
     ├── schema.ts       ← Zod → JSON Schema conversion + schema fingerprinting
@@ -66,9 +67,14 @@ These patterns look like they could be simplified but exist for specific reasons
 
 **Native API detection**: The polyfill checks for native `document.modelContext` (document-only — it does not read `navigator.modelContext`) and skips installation if it exists. Don't remove this check — Chrome is shipping native WebMCP support.
 
-**AbortSignal-only unregistration**: There is no `unregisterTool`. Tools are removed by aborting the `AbortSignal` passed to `registerTool`. `useMcpTool` aborts its controller on cleanup; the registry's abort listener removes the tool. Don't reintroduce an imperative unregister method.
+**AbortSignal-only unregistration**: There is no `unregisterTool`. Tools are removed by aborting the `AbortSignal` passed to `registerTool`. `useMcpTool` aborts its controller on cleanup; the registry's abort listener removes the tool. Don't reintroduce an imperative unregister method. Unregistration does not cancel in-flight executions (Chrome 153.0.8008.0+); they run to completion.
 
-**Single-arg execute/handler**: `descriptor.execute(input)` and the user `handler(args)` take a single argument. There is no `ModelContextClient` second argument. Both execution paths must stay mirrored.
+**Two-arg execute/handler**: `descriptor.execute(input, { signal })` and the user
+`handler(args, ctx)` receive the execution `AbortSignal` as their second argument (Chrome
+153+ shape). There is still no `ModelContextClient`. A missing second argument at runtime
+(Chrome ≤152) is substituted with a never-aborting signal. Both execution paths must stay
+mirrored — they share `runHandler` in `useMcpTool.ts` and `runTool` in
+`polyfill/execute.ts`.
 
 ## Testing
 
