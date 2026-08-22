@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { CallToolResult, ToolDescriptor } from "../../types";
+import { _resetWarnings } from "../../utils/warn";
 import { createRegistry } from "../registry";
 import { createTestingShim } from "../testing-shim";
 
@@ -63,20 +64,22 @@ describe("createTestingShim", () => {
       expect(handler.mock.calls[0][0]).toEqual({ query: "hello" });
     });
 
-    it("calls execute with a single input argument (no client)", async () => {
+    it("calls execute with input and an options object carrying an AbortSignal", async () => {
+      // Chrome 153+ shape: execute(input, { signal }).
       const registry = createRegistry();
       const shim = createTestingShim(registry);
-      let argCount = -1;
+      let args: unknown[] = [];
       await registry.registerTool({
         name: "arity_tool",
         description: "checks arity",
-        execute: (...args: unknown[]) => {
-          argCount = args.length;
+        execute: (...a: unknown[]) => {
+          args = a;
           return { content: [{ type: "text", text: "ok" }] };
         },
       });
       await shim.executeTool("arity_tool", "{}");
-      expect(argCount).toBe(1);
+      expect(args).toHaveLength(2);
+      expect((args[1] as { signal: AbortSignal }).signal).toBeInstanceOf(AbortSignal);
     });
 
     it("returns stringified CallToolResult", async () => {
@@ -185,7 +188,8 @@ describe("createTestingShim", () => {
       ).rejects.toThrow(expect.objectContaining({ name: "AbortError" }));
     });
 
-    it("does not produce unhandled rejection when handler aborts then throws", async () => {
+    it("rejects with the abort reason (not the handler error) when handler aborts then throws", async () => {
+      // Chrome 152+: once aborted, the caller sees the abort reason.
       const controller = new AbortController();
       const { shim } = setup([
         makeTool({
@@ -198,7 +202,7 @@ describe("createTestingShim", () => {
 
       await expect(
         shim.executeTool("test_tool", '{"query":"x"}', { signal: controller.signal }),
-      ).rejects.toThrow("handler threw after aborting");
+      ).rejects.toThrow(expect.objectContaining({ name: "AbortError" }));
     });
 
     it("rejects immediately with AbortError for pre-aborted signal", async () => {
@@ -209,6 +213,19 @@ describe("createTestingShim", () => {
       await expect(
         shim.executeTool("test_tool", '{"query":"x"}', { signal: controller.signal }),
       ).rejects.toThrow(expect.objectContaining({ name: "AbortError" }));
+    });
+
+    it("warns once about deprecation", async () => {
+      _resetWarnings();
+      const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const { shim } = setup();
+      await shim.executeTool("test_tool", '{"query":"x"}');
+      shim.listTools();
+      const deprecationWarns = spy.mock.calls.filter(
+        (c) => typeof c[0] === "string" && c[0].includes("modelContextTesting is deprecated"),
+      );
+      expect(deprecationWarns).toHaveLength(1);
+      spy.mockRestore();
     });
   });
 
