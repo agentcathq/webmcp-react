@@ -91,9 +91,11 @@ export function GreetTool() {
     input: z.object({
       name: z.string().describe("The name to greet"),
     }),
-    handler: async ({ name }) => ({
-      content: [{ type: "text", text: `Hello, ${name}!` }],
-    }),
+    handler: async ({ name }, { signal }) => {
+      // signal aborts if the agent cancels — forward it to cancellable work
+      const res = await fetch(`/api/greet?name=${encodeURIComponent(name)}`, { signal });
+      return { content: [{ type: "text", text: await res.text() }] };
+    },
   });
   return null;
 }

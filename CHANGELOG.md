@@ -4,10 +4,39 @@ All notable changes to `webmcp-react` are documented here. The format is based o
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## 0.3.0
+
+Tracks Chrome 152–154 WebMCP changes: execution AbortSignals, the
+`document.modelContext` consumer API, and the removal of
+`navigator.modelContextTesting` from native Chrome.
+
+### Added
+
+- **Handlers receive an execution `AbortSignal`.** Handlers are now called as
+  `handler(args, { signal })`; on Chrome 153.0.8007.0+ the signal aborts when the agent or
+  user cancels the call — pass it to `fetch()` and other cancellable work. On Chrome ≤152
+  (and for bare `execute(args)` calls) the library substitutes a never-aborting signal, so
+  the second argument is always safe to use. The hook's `execute(input?, { signal }?)`
+  accepts a caller signal too. Existing one-argument handlers keep working unchanged.
+- **Polyfill consumer API.** `document.modelContext.getTools()` and
+  `executeTool(tool, inputArguments, { signal }?)`, matching native Chrome:
+  `RegisteredTool.inputSchema` is a deep-copied object (Chrome 154.0.8014.0+ shape),
+  `inputArguments` may be a JSON string or an object, execution failures reject with
+  `UnknownError`, aborts reject with the signal's reason, and unregistering a tool no
+  longer cancels in-flight executions (Chrome 153.0.8008.0+ behavior). The polyfill
+  additionally validates input against `inputSchema` (`OperationError`) — native Chrome
+  does not validate yet.
+- New exported types: `ToolExecuteCallbackOptions`, `ExecuteToolOptions`,
+  `RegisteredTool`, `ModelContextGetToolOptions`.
 
 ### Changed
 
+- **Abort is cancellation, not error.** When an execution's signal aborts and the handler
+  rejects, the hook clears `isExecuting` but leaves `state.error` untouched and does not
+  fire `onError`.
+- The testing shim's abort rejections now use the signal's abort reason and its tool
+  failures reject with `UnknownError` (Chrome 152+ parity); its `OperationError` input
+  errors and `NotFoundError` are unchanged.
 - **Already-aborted `AbortSignal` now rejects.** The polyfill's `registerTool` rejects with the
   signal's abort reason when handed an already-aborted signal, matching WebMCP spec PR #202 and
   native Chrome 152.0.7943.0. Previously it resolved as a no-op, matching native Chrome 151.
@@ -16,6 +45,12 @@ All notable changes to `webmcp-react` are documented here. The format is based o
   treated as lifecycle teardown.
 - Docs and npm keywords now reference `document.modelContext`; `navigator.modelContext` was
   removed from Chrome as of 152.0.7943.0 (the library itself migrated in 0.2.0).
+
+### Deprecated
+
+- **`navigator.modelContextTesting`.** Native Chrome removed it in 152.0.7940.0. The
+  polyfill's shim now delegates to the same engine as `document.modelContext.executeTool()`
+  and warns once in dev. It will be removed in webmcp-react 0.4.0.
 
 ## 0.2.0
 

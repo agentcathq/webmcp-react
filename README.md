@@ -40,7 +40,7 @@ function SearchTool() {
     name: "search",
     description: "Search the catalog",
     input: z.object({ query: z.string() }),
-    handler: async ({ query }) => ({
+    handler: async ({ query }, { signal }) => ({
       content: [{ type: "text", text: `Results for: ${query}` }],
     }),
   });
@@ -190,6 +190,17 @@ useMcpTool({
 ### SSR
 
 Works with Next.js, Remix, and any server-rendering framework out of the box. The build includes a `"use client"` banner, so no extra configuration is needed.
+
+## What's new in 0.3.0
+
+- **Handlers get an execution `AbortSignal`**: `handler(args, { signal })`. Chrome 153+
+  aborts it when the agent cancels the call; on older Chrome the library substitutes a
+  never-aborting signal, so `fetch(url, { signal })` is always safe. One-argument handlers
+  keep working.
+- **Consumer API in the polyfill**: `document.modelContext.getTools()` /
+  `executeTool(tool, args, { signal }?)` — the same surface native Chrome 152+ ships.
+- **`navigator.modelContextTesting` is deprecated** (removed from native Chrome in 152;
+  removed from this library in 0.4.0).
 
 ## Breaking changes in 0.2.0
 

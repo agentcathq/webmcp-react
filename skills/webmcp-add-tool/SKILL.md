@@ -33,9 +33,9 @@ export function MyTool() {
       // Define each input field with .describe() for AI context
       query: z.string().describe("The search query"),
     }),
-    handler: async ({ query }) => {
-      // Implement tool logic here
-      const result = await doSomething(query);
+    handler: async ({ query }, { signal }) => {
+      // signal aborts if the agent cancels — forward it to cancellable work
+      const result = await doSomething(query, { signal });
       return {
         content: [{ type: "text", text: JSON.stringify(result) }],
       };
