@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, it } from "vitest";
-import type { CallToolResult, ModelContext, RegisteredTool, ToolDescriptor } from "../../types";
+import type {
+  CallToolResult,
+  InputSchema,
+  InputSchemaProperty,
+  ModelContext,
+  RegisteredTool,
+  ToolDescriptor,
+} from "../../types";
 import { cleanupPolyfill, installPolyfill } from "..";
 
 function makeTool(overrides?: Partial<ToolDescriptor>): ToolDescriptor {
@@ -19,6 +26,9 @@ function makeTool(overrides?: Partial<ToolDescriptor>): ToolDescriptor {
 // The polyfill always implements getTools/executeTool; narrow once here.
 type InstalledModelContext = ModelContext &
   Required<Pick<ModelContext, "getTools" | "executeTool">>;
+
+// The schema shape makeTool() registers, down to the nested "query" property.
+type SchemaWithQuery = InputSchema & { properties: { query: InputSchemaProperty } };
 
 function mc(): InstalledModelContext {
   const m = document.modelContext;
@@ -48,9 +58,14 @@ describe("document.modelContext.getTools (polyfill)", () => {
     installPolyfill();
     await mc().registerTool(makeTool());
     const [first] = await mc().getTools();
-    (first.inputSchema as Record<string, unknown>).type = "mutated";
+    const firstSchema = first.inputSchema as SchemaWithQuery;
+    // Mutate a nested node; a top-level mutation can't tell deep from shallow.
+    firstSchema.type = "mutated";
+    firstSchema.properties.query.type = "mutated";
     const [second] = await mc().getTools();
-    expect((second.inputSchema as Record<string, unknown>).type).toBe("object");
+    const secondSchema = second.inputSchema as SchemaWithQuery;
+    expect(secondSchema.type).toBe("object");
+    expect(secondSchema.properties.query.type).toBe("string");
   });
 
   it("returns fresh objects on every call", async () => {
@@ -135,10 +150,12 @@ describe("document.modelContext.executeTool (polyfill)", () => {
     const registration = new AbortController();
     let resolveTool!: (r: CallToolResult) => void;
     let toolSignalAborted = false;
+    let started = false;
     await mc().registerTool(
       makeTool({
         inputSchema: undefined,
         execute: (_input, { signal }) => {
+          started = true;
           signal.addEventListener("abort", () => {
             toolSignalAborted = true;
           });
@@ -151,7 +168,8 @@ describe("document.modelContext.executeTool (polyfill)", () => {
     );
     const [tool] = await mc().getTools();
     const pending = mc().executeTool(tool, "{}");
-    await Promise.resolve(); // let execute start
+    await Promise.resolve(); // flush the microtask that starts execute
+    expect(started).toBe(true);
     registration.abort(); // unregister mid-flight (Chrome 153.0.8008+ behavior)
     resolveTool({ content: [{ type: "text", text: "late-ok" }] });
     const raw = await pending;
