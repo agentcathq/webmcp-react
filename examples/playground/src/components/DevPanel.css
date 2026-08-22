@@ -189,6 +189,30 @@
   cursor: not-allowed;
 }
 
+.devpanel-run-row {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.devpanel-run-row .devpanel-run {
+  flex: 1;
+}
+
+.devpanel-cancel {
+  padding: 0.5rem 0.75rem;
+  background: #5c1a1a;
+  color: #e0e0e0;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+.devpanel-cancel:hover {
+  background: #701e1e;
+}
+
 .devpanel-results-header {
   display: flex;
   justify-content: space-between;

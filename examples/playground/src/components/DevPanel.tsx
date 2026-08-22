@@ -5,7 +5,6 @@ interface ToolInfo {
   name: string;
   description: string;
   inputSchema: string;
-  outputSchema?: string;
 }
 
 interface ExecutionResult {
@@ -24,11 +23,27 @@ export function DevPanel() {
   const [results, setResults] = useState<ExecutionResult[]>([]);
   const [isOpen, setIsOpen] = useState(true);
   const [isExecuting, setIsExecuting] = useState(false);
+  const [abortController, setAbortController] = useState<AbortController | null>(null);
 
-  const refreshTools = useCallback(() => {
-    const mct = (navigator as any).modelContextTesting;
-    if (!mct) return;
-    const listed: ToolInfo[] = mct.listTools();
+  const refreshTools = useCallback(async () => {
+    const mc = document.modelContext;
+    let listed: ToolInfo[] = [];
+    if (mc?.getTools) {
+      const tools = await mc.getTools();
+      listed = tools.map((t) => ({
+        name: t.name,
+        description: t.description,
+        // Chrome <=153: string; Chrome 154+/polyfill 1.1.0: object.
+        inputSchema:
+          typeof t.inputSchema === "string"
+            ? t.inputSchema
+            : JSON.stringify(t.inputSchema ?? { type: "object", properties: {} }),
+      }));
+    } else {
+      const mct = (navigator as any).modelContextTesting;
+      if (!mct) return;
+      listed = mct.listTools();
+    }
     setTools(listed);
     setSelectedTool((prev) => {
       if (prev && listed.some((t) => t.name === prev)) return prev;
@@ -65,15 +80,26 @@ export function DevPanel() {
 
   const handleExecute = async () => {
     if (!selectedTool) return;
-    const mct = (navigator as any).modelContextTesting;
-    if (!mct) return;
 
+    const controller = new AbortController();
+    setAbortController(controller);
     setIsExecuting(true);
     const start = performance.now();
 
     try {
       JSON.parse(inputValue); // validate
-      const raw = await mct.executeTool(selectedTool, inputValue);
+      const mc = document.modelContext;
+      let raw: string | null;
+      if (mc?.getTools && mc.executeTool) {
+        const listed = await mc.getTools();
+        const tool = listed.find((t) => t.name === selectedTool);
+        if (!tool) throw new Error(`Tool "${selectedTool}" is no longer registered`);
+        raw = await mc.executeTool(tool, inputValue, { signal: controller.signal });
+      } else {
+        raw = await (navigator as any).modelContextTesting.executeTool(selectedTool, inputValue, {
+          signal: controller.signal,
+        });
+      }
       const duration = performance.now() - start;
       setResults((prev) => [
         {
@@ -100,6 +126,7 @@ export function DevPanel() {
         ...prev,
       ]);
     } finally {
+      setAbortController(null);
       setIsExecuting(false);
     }
   };
@@ -152,13 +179,6 @@ export function DevPanel() {
             <pre>{JSON.stringify(JSON.parse(selectedToolInfo.inputSchema), null, 2)}</pre>
           </details>
 
-          {selectedToolInfo.outputSchema && (
-            <details>
-              <summary>Output Schema</summary>
-              <pre>{JSON.stringify(JSON.parse(selectedToolInfo.outputSchema), null, 2)}</pre>
-            </details>
-          )}
-
           <div className="devpanel-input">
             <div className="devpanel-input-header">
               <label>Input JSON</label>
@@ -172,9 +192,19 @@ export function DevPanel() {
             />
           </div>
 
-          <button className="devpanel-run" onClick={handleExecute} disabled={isExecuting}>
-            {isExecuting ? "Executing..." : "Execute"}
-          </button>
+          <div className="devpanel-run-row">
+            <button className="devpanel-run" onClick={handleExecute} disabled={isExecuting}>
+              {isExecuting ? "Executing..." : "Execute"}
+            </button>
+            {isExecuting && (
+              <button
+                className="devpanel-cancel"
+                onClick={() => abortController?.abort(new DOMException("Cancelled from DevPanel", "AbortError"))}
+              >
+                Cancel
+              </button>
+            )}
+          </div>
         </section>
       )}
 
