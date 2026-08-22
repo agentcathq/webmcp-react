@@ -1,15 +1,40 @@
+/** @deprecated Removed from native Chrome in 152; kept as a fallback for pages on webmcp-react <=1.0.0. */
 interface ModelContextTesting {
   listTools(): BrowserTool[];
   executeTool(
     toolName: string,
     inputArgsJson: string,
+    options?: { signal?: AbortSignal },
   ): Promise<string | null>;
   registerToolsChangedCallback(callback: () => void): void;
+}
+
+export interface PageRegisteredTool {
+  name: string;
+  title?: string;
+  description: string;
+  /** JSON string on Chrome <=153, object on Chrome 154+ / webmcp-react 1.1.0 polyfill. */
+  inputSchema?: string | object;
+  annotations?: Record<string, unknown>;
+  window?: Window;
+  origin?: string;
+}
+
+export interface PageModelContext extends EventTarget {
+  getTools?(options?: { fromOrigins?: string[] }): Promise<PageRegisteredTool[]>;
+  executeTool?(
+    tool: PageRegisteredTool,
+    inputArguments: string | object,
+    options?: { signal?: AbortSignal },
+  ): Promise<string | null>;
 }
 
 declare global {
   interface Navigator {
     modelContextTesting?: ModelContextTesting;
+  }
+  interface Document {
+    modelContext?: PageModelContext;
   }
 }
 
