@@ -3,6 +3,16 @@ import type { z } from "zod";
 
 export type MaybePromise<T> = T | Promise<T>;
 
+/** Second argument to a tool's execute callback / useMcpTool handler (Chrome 153+ shape). */
+export interface ToolExecuteCallbackOptions {
+  signal: AbortSignal;
+}
+
+/** Options for ModelContext.executeTool and UseMcpToolReturn.execute. */
+export interface ExecuteToolOptions {
+  signal?: AbortSignal;
+}
+
 export interface InputSchemaProperty {
   type: string;
   description?: string;
@@ -74,7 +84,7 @@ export interface ToolDescriptor<TArgs = Record<string, unknown>> {
   inputSchema?: InputSchema;
   outputSchema?: InputSchema;
   annotations?: ToolAnnotations;
-  execute: (input: TArgs) => MaybePromise<CallToolResult>;
+  execute: (input: TArgs, options: ToolExecuteCallbackOptions) => MaybePromise<CallToolResult>;
 }
 
 interface McpToolConfigBase {
@@ -92,7 +102,10 @@ export interface McpToolConfigZod<T extends z.ZodRawShape> extends McpToolConfig
   inputSchema?: never;
   output?: z.ZodObject<z.ZodRawShape>;
   outputSchema?: never;
-  handler: (args: z.infer<z.ZodObject<T>>) => MaybePromise<CallToolResult>;
+  handler: (
+    args: z.infer<z.ZodObject<T>>,
+    ctx: ToolExecuteCallbackOptions,
+  ) => MaybePromise<CallToolResult>;
 }
 
 export interface McpToolConfigJsonSchema extends McpToolConfigBase {
@@ -100,7 +113,10 @@ export interface McpToolConfigJsonSchema extends McpToolConfigBase {
   inputSchema?: InputSchema;
   output?: never;
   outputSchema?: InputSchema;
-  handler: (args: Record<string, unknown>) => MaybePromise<CallToolResult>;
+  handler: (
+    args: Record<string, unknown>,
+    ctx: ToolExecuteCallbackOptions,
+  ) => MaybePromise<CallToolResult>;
 }
 
 export interface ToolExecutionState<TResult = CallToolResult> {
@@ -112,7 +128,7 @@ export interface ToolExecutionState<TResult = CallToolResult> {
 
 export interface UseMcpToolReturn<TResult = CallToolResult> {
   state: ToolExecutionState<TResult>;
-  execute: (input?: Record<string, unknown>) => Promise<TResult>;
+  execute: (input?: Record<string, unknown>, options?: ExecuteToolOptions) => Promise<TResult>;
   reset: () => void;
 }
 
@@ -131,8 +147,34 @@ export interface RegisterToolOptions {
   exposedTo?: string[];
 }
 
+/**
+ * Tool metadata returned by ModelContext.getTools().
+ * `inputSchema` is an object on Chrome 154+ and this library's polyfill, but a
+ * JSON string on Chrome ≤153 — consumers must handle both:
+ * `typeof s === "string" ? JSON.parse(s) : s`.
+ */
+export interface RegisteredTool {
+  name: string;
+  title?: string;
+  description: string;
+  inputSchema?: InputSchema | string;
+  annotations?: ToolAnnotations;
+  window?: Window;
+  origin?: string;
+}
+
+export interface ModelContextGetToolOptions {
+  fromOrigins?: string[];
+}
+
 export interface ModelContext extends EventTarget {
   registerTool(tool: ToolDescriptor, options?: RegisterToolOptions): Promise<undefined>;
+  getTools?(options?: ModelContextGetToolOptions): Promise<RegisteredTool[]>;
+  executeTool?(
+    tool: RegisteredTool,
+    inputArguments: string | object,
+    options?: ExecuteToolOptions,
+  ): Promise<string | null>;
   ontoolchange: ((this: ModelContext, ev: Event) => unknown) | null;
   addEventListener(
     type: "toolchange",
@@ -146,16 +188,19 @@ export interface ModelContext extends EventTarget {
   ): void;
 }
 
+/** @deprecated Removed from native Chrome in 152; use ModelContext.getTools()/executeTool(). Will be removed in webmcp-react 0.4.0. */
 export interface ModelContextTestingToolInfo {
   name: string;
   description: string;
   inputSchema?: string;
 }
 
+/** @deprecated Removed from native Chrome in 152. Will be removed in webmcp-react 0.4.0. */
 export interface ModelContextTestingExecuteToolOptions {
   signal?: AbortSignal;
 }
 
+/** @deprecated Removed from native Chrome in 152; use document.modelContext.getTools()/executeTool(). Will be removed in webmcp-react 0.4.0. */
 export interface ModelContextTesting {
   listTools(): ModelContextTestingToolInfo[];
   executeTool(
