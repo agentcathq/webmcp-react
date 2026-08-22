@@ -632,7 +632,7 @@ describe("Strict Mode safety", () => {
               name: "greet",
               description: "Say hello",
               input: z.object({ name: z.string() }),
-              handler: async ({ name }) => makeResult(`hello ${name}`),
+              handler: async ({ name }: Record<string, unknown>) => makeResult(`hello ${name}`),
             }}
           />
         </WebMCPProvider>
@@ -978,7 +978,7 @@ describe("MCP integration", () => {
           name: "greet",
           description: "Say hello",
           input: z.object({ name: z.string() }),
-          handler: async ({ name }) => makeResult(`hello ${name}`),
+          handler: async ({ name }: Record<string, unknown>) => makeResult(`hello ${name}`),
         }}
       />,
     );
@@ -1628,10 +1628,11 @@ describe("execution signal", () => {
     );
     await waitForRegistration();
     const controller = new AbortController();
+    const exec = executeRef.current as ExecuteFn;
     let rejected: unknown = null;
     let promise!: Promise<CallToolResult>;
     act(() => {
-      promise = executeRef.current!({}, { signal: controller.signal });
+      promise = exec({}, { signal: controller.signal });
       promise.catch((e: unknown) => {
         rejected = e;
       });
@@ -1729,8 +1730,9 @@ describe("execution signal", () => {
     );
     await waitForRegistration();
     const controller = new AbortController(); // present but never aborted
+    const exec = executeRef.current as ExecuteFn;
     await act(async () => {
-      await executeRef.current!({}, { signal: controller.signal }).catch(() => {});
+      await exec({}, { signal: controller.signal }).catch(() => {});
     });
     expect(onError).toHaveBeenCalledTimes(1);
     expect(getByTestId("error").textContent).toBe("genuine failure");
