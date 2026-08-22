@@ -59,31 +59,138 @@ async function runSelfTest(log: (line: string) => void) {
   const isPolyfill = "__isWebMCPPolyfill" in mc;
   log(isPolyfill ? "INFO: backend = polyfill" : "PASS: backend = native");
 
-  const t = navigator.modelContextTesting;
-  if (!t) {
-    log("FAIL: navigator.modelContextTesting missing");
+  // Consumer API (document.modelContext) — native Chrome or the 1.1.0+ polyfill.
+  if (!mc.getTools || !mc.executeTool) {
+    log("FAIL: document.modelContext.getTools/executeTool missing (Chrome <=149 or webmcp-react <=1.0.0)");
     return;
   }
-  const names = t.listTools().map((x) => x.name);
+  const tools = await mc.getTools();
+  const names = tools.map((x) => x.name);
   log(
     names.includes("echo") && names.includes("add")
-      ? "PASS: listTools"
-      : `FAIL: listTools ${names}`,
+      ? "PASS: getTools"
+      : `FAIL: getTools ${names}`,
   );
-  const echoRaw = await t.executeTool("echo", JSON.stringify({ text: "hi" }));
+
+  // Chrome <=153 returns inputSchema as a JSON string; 154+/polyfill as an object.
+  const echoTool = tools.find((x) => x.name === "echo");
+  const echoSchema =
+    typeof echoTool?.inputSchema === "string"
+      ? JSON.parse(echoTool.inputSchema)
+      : echoTool?.inputSchema;
+  log(
+    echoSchema && typeof echoSchema === "object" && "properties" in echoSchema
+      ? `PASS: inputSchema normalized (${typeof echoTool?.inputSchema})`
+      : `FAIL: inputSchema ${JSON.stringify(echoTool?.inputSchema)}`,
+  );
+
+  const echoRaw = echoTool ? await mc.executeTool(echoTool, JSON.stringify({ text: "hi" })) : null;
   const echo = echoRaw ? JSON.parse(echoRaw) : null;
   log(
-    echo?.content?.[0]?.text?.includes("hi")
-      ? "PASS: execute echo"
-      : `FAIL: echo ${echoRaw}`,
+    echo?.content?.[0]?.text?.includes("hi") ? "PASS: executeTool echo" : `FAIL: echo ${echoRaw}`,
   );
-  const addRaw = await t.executeTool("add", JSON.stringify({ a: 2, b: 3 }));
+
+  const addTool = tools.find((x) => x.name === "add");
+  const addRaw = addTool ? await mc.executeTool(addTool, JSON.stringify({ a: 2, b: 3 })) : null;
   const add = addRaw ? JSON.parse(addRaw) : null;
-  log(
-    add?.content?.[0]?.text?.includes("5")
-      ? "PASS: execute add"
-      : `FAIL: add ${addRaw}`,
-  );
+  log(add?.content?.[0]?.text?.includes("5") ? "PASS: executeTool add" : `FAIL: add ${addRaw}`);
+
+  // Probe: handler receives options.signal (Chrome 153.0.8007+ / polyfill 1.1.0+).
+  {
+    const reg = new AbortController();
+    let sawSignal: unknown = "not-called";
+    await mc.registerTool(
+      {
+        name: "signal_probe",
+        description: "Probe execute options.signal.",
+        execute: (_input: Record<string, unknown>, options?: { signal?: AbortSignal }) => {
+          sawSignal = options?.signal;
+          return { content: [{ type: "text", text: "ok" }] };
+        },
+      },
+      { signal: reg.signal },
+    );
+    const probeTool = (await mc.getTools()).find((x) => x.name === "signal_probe");
+    if (probeTool) {
+      await mc.executeTool(probeTool, "{}");
+      log(
+        sawSignal instanceof AbortSignal
+          ? "PASS: execute received options.signal"
+          : "INFO: no options.signal (Chrome <=152)",
+      );
+    }
+    reg.abort();
+  }
+
+  // Probe: caller abort → tool signal aborts (generic AbortError), caller rejects.
+  {
+    const reg = new AbortController();
+    let toolAborted: string | null = null;
+    await mc.registerTool(
+      {
+        name: "abort_flight_probe",
+        description: "Probe mid-flight cancellation.",
+        execute: (_input: Record<string, unknown>, options?: { signal?: AbortSignal }) =>
+          new Promise((_resolve, reject) => {
+            options?.signal?.addEventListener("abort", () => {
+              toolAborted =
+                options.signal?.reason instanceof DOMException
+                  ? options.signal.reason.name
+                  : String(options.signal?.reason);
+              reject(options.signal?.reason);
+            });
+          }),
+      },
+      { signal: reg.signal },
+    );
+    const probeTool = (await mc.getTools()).find((x) => x.name === "abort_flight_probe");
+    if (probeTool) {
+      const controller = new AbortController();
+      const pending = mc.executeTool(probeTool, "{}", { signal: controller.signal });
+      controller.abort(new DOMException("probe cancel", "AbortError"));
+      await pending.then(
+        () => log("FAIL: aborted executeTool resolved"),
+        (err: unknown) =>
+          log(
+            `PASS: aborted executeTool rejected (caller: ${(err as { name?: string })?.name}, tool: ${toolAborted ?? "no signal (Chrome <=152)"})`,
+          ),
+      );
+    }
+    reg.abort();
+  }
+
+  // Probe: unregister mid-flight — execution survives (Chrome 153.0.8008+ / polyfill 1.1.0+).
+  {
+    const reg = new AbortController();
+    await mc.registerTool(
+      {
+        name: "unregister_probe",
+        description: "Probe unregister-during-execution.",
+        execute: () =>
+          new Promise((resolve) =>
+            setTimeout(() => resolve({ content: [{ type: "text", text: "survived" }] }), 200),
+          ),
+      },
+      { signal: reg.signal },
+    );
+    const probeTool = (await mc.getTools()).find((x) => x.name === "unregister_probe");
+    if (probeTool) {
+      const pending = mc.executeTool(probeTool, "{}");
+      reg.abort(); // unregister while in flight
+      await pending.then(
+        (raw) =>
+          log(
+            String(raw).includes("survived")
+              ? "PASS: unregister does not cancel in-flight execution"
+              : `FAIL: unexpected result ${raw}`,
+          ),
+        (err: unknown) =>
+          log(
+            `INFO: in-flight execution rejected on unregister (${(err as { name?: string })?.name}; pre-153.0.8008 behavior)`,
+          ),
+      );
+    }
+  }
 
   // Spec + native Chrome 152+: registerTool with an already-aborted signal
   // rejects with the signal's abort reason. Older native (<=151) resolved as a
