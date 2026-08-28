@@ -61,7 +61,7 @@
   "peerDependencies": {
     "react": ">=18.0.0",
     "react-dom": ">=18.0.0",
-    "zod": ">=3.0.0"
+    "zod": "^3.25.0 || ^4.0.0"
   },
   "dependencies": {
     "zod-to-json-schema": "^3.24.1"
@@ -80,7 +80,7 @@
     "tsup": "^8.5.1",
     "typescript": "^5.9.3",
     "vitest": "^3.2.7",
-    "zod": "^3.25.76"
+    "zod": "^4.4.3"
   },
   "lint-staged": {
     "*.{ts,tsx}": [

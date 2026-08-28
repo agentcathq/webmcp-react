@@ -3,6 +3,7 @@ import { StrictMode } from "react";
 import { renderToString } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
+import * as z3 from "zod/v3";
 import { _resetPolyfillConsumerCount, WebMCPProvider } from "../../context";
 import { cleanupPolyfill } from "../../polyfill";
 import type { CallToolResult, McpToolConfigJsonSchema, McpToolConfigZod } from "../../types";
@@ -38,7 +39,7 @@ async function waitForRegistration() {
 
 type ExecuteFn = ReturnType<typeof useMcpTool>["execute"];
 type ResetFn = ReturnType<typeof useMcpTool>["reset"];
-type ToolConfig = McpToolConfigZod<z.ZodRawShape> | McpToolConfigJsonSchema;
+type ToolConfig = McpToolConfigZod | McpToolConfigJsonSchema;
 
 // ─── Test component ──────────────────────────────────────────────
 
@@ -108,6 +109,43 @@ describe("registration lifecycle", () => {
     expect(schema.type).toBe("object");
     expect(schema.properties.name.type).toBe("string");
     expect(schema.required).toContain("name");
+  });
+
+  it("registers and validates Zod 3 schemas on both execution paths", async () => {
+    const executeRef = { current: null } as React.MutableRefObject<ExecuteFn | null>;
+
+    renderWithProvider(
+      <ToolComponent
+        config={{
+          name: "greet",
+          description: "Say hello",
+          input: z3.object({ name: z3.string().min(3) }),
+          handler: async ({ name }) => makeResult(`hello ${name}`),
+        }}
+        onExecuteRef={executeRef}
+      />,
+    );
+
+    await waitForRegistration();
+
+    const tools = navigator.modelContextTesting?.listTools() ?? [];
+    const schema = JSON.parse(tools[0].inputSchema ?? "{}");
+    expect(schema.properties.name.type).toBe("string");
+
+    let directResult: CallToolResult | undefined;
+    await act(async () => {
+      directResult = await executeRef.current?.({ name: "world" });
+    });
+    expect(directResult?.content[0]).toMatchObject({ type: "text", text: "hello world" });
+
+    let externalResultJson: string | null | undefined;
+    await act(async () => {
+      externalResultJson = await navigator.modelContextTesting?.executeTool(
+        "greet",
+        JSON.stringify({ name: "x" }),
+      );
+    });
+    expect(JSON.parse(externalResultJson ?? "{}")).toMatchObject({ isError: true });
   });
 
   it("registers tool with JSON Schema on mount", async () => {

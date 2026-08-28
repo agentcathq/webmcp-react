@@ -24,7 +24,7 @@ function AvailabilityDisplay() {
   return <span data-testid="smoke-available">{available ? "yes" : "no"}</span>;
 }
 
-type ToolConfig = McpToolConfigZod<z.ZodRawShape> | McpToolConfigJsonSchema;
+type ToolConfig = McpToolConfigZod | McpToolConfigJsonSchema;
 
 function SmokeToolComponent({ config }: { config: ToolConfig }) {
   const { state } = useMcpTool(config as McpToolConfigJsonSchema);

@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { z } from "zod";
+import * as z3 from "zod/v3";
+import * as z4 from "zod/v4";
+import * as zm from "zod/v4/mini";
 import type { InputSchema } from "../../types";
 import { schemaFingerprint, zodToInputSchema } from "../schema";
+
+const z = z3;
 
 // ─── zodToInputSchema ────────────────────────────────────────────
 
@@ -139,6 +143,39 @@ describe("zodToInputSchema", () => {
     expect(result.properties?.home).toHaveProperty("type", "object");
     expect(result.properties?.work).toHaveProperty("type", "object");
     expect(result.properties?.work).not.toHaveProperty("$ref");
+  });
+
+  it("converts Zod 4 schemas with descriptions and constraints", () => {
+    const schema = z4.object({
+      emails: z4.array(z4.email()).min(1).max(25).describe("Email addresses to invite."),
+    });
+    const result = zodToInputSchema(schema);
+
+    expect(result).toMatchObject({
+      type: "object",
+      properties: {
+        emails: {
+          type: "array",
+          minItems: 1,
+          maxItems: 25,
+          description: "Email addresses to invite.",
+          items: { type: "string", format: "email" },
+        },
+      },
+      required: ["emails"],
+    });
+    expect(result).not.toHaveProperty("$schema");
+  });
+
+  it("converts Zod 4 Mini schemas", () => {
+    const schema = zm.object({ name: zm.string() });
+    const result = zodToInputSchema(schema);
+
+    expect(result).toMatchObject({
+      type: "object",
+      properties: { name: { type: "string" } },
+      required: ["name"],
+    });
   });
 });
 
