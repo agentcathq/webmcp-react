@@ -32,7 +32,9 @@ export function zodToInputSchema(zodObject: ZodObjectSchema): InputSchema {
     "_zod" in zodObject
       ? z4.toJSONSchema(zodObject, {
           io: "input",
-          target: "draft-07",
+          // "draft-7" is the only spelling accepted across the whole peer range;
+          // zod 3.25's bundled core rejects the "draft-07" alias added in zod 4.
+          target: "draft-7",
           // Match zod-to-json-schema's `$refStrategy: "none"` so agents see
           // fully inlined object shapes instead of `$ref` / `$defs`.
           reused: "inline",
