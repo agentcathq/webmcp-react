@@ -1,7 +1,7 @@
 import * as z3 from "zod/v3";
 import * as z4 from "zod/v4/core";
 import { zodToJsonSchema } from "zod-to-json-schema";
-import type { InputSchema, ZodInput, ZodObjectSchema } from "../types";
+import type { InputSchema, ZodObjectSchema, ZodParsed } from "../types";
 
 export function isZodObjectSchema(schema: unknown): schema is ZodObjectSchema {
   if (typeof schema !== "object" || schema === null) {
@@ -18,19 +18,25 @@ export function isZodObjectSchema(schema: unknown): schema is ZodObjectSchema {
   );
 }
 
-export function parseZodInput<T extends ZodObjectSchema>(schema: T, input: unknown): ZodInput<T> {
+export function parseZodInput<T extends ZodObjectSchema>(schema: T, input: unknown): ZodParsed<T> {
   if ("_zod" in schema) {
-    return z4.parse(schema, input) as ZodInput<T>;
+    return z4.parse(schema, input) as ZodParsed<T>;
   }
 
-  return schema.parse(input) as ZodInput<T>;
+  return schema.parse(input) as ZodParsed<T>;
 }
 
 // Strips the `$schema` key since MCP doesn't use it.
 export function zodToInputSchema(zodObject: ZodObjectSchema): InputSchema {
   const jsonSchema = (
     "_zod" in zodObject
-      ? z4.toJSONSchema(zodObject, { io: "input", target: "draft-07" })
+      ? z4.toJSONSchema(zodObject, {
+          io: "input",
+          target: "draft-07",
+          // Match zod-to-json-schema's `$refStrategy: "none"` so agents see
+          // fully inlined object shapes instead of `$ref` / `$defs`.
+          reused: "inline",
+        })
       : zodToJsonSchema(zodObject, { $refStrategy: "none" })
   ) as Record<string, unknown>;
   delete jsonSchema.$schema;

@@ -90,10 +90,11 @@ interface McpToolConfigBase {
 
 export type ZodObjectSchema = z3.AnyZodObject | z4.$ZodObject;
 
-export type ZodInput<T extends ZodObjectSchema> = T extends z4.$ZodType
-  ? z4.input<T>
+/** Parsed schema output — same semantics as Zod's `z.infer`. */
+export type ZodParsed<T extends ZodObjectSchema> = T extends z4.$ZodType
+  ? z4.output<T>
   : T extends z3.ZodTypeAny
-    ? z3.input<T>
+    ? z3.infer<T>
     : never;
 
 export interface McpToolConfigZod<T extends ZodObjectSchema = ZodObjectSchema>
@@ -102,7 +103,7 @@ export interface McpToolConfigZod<T extends ZodObjectSchema = ZodObjectSchema>
   inputSchema?: never;
   output?: ZodObjectSchema;
   outputSchema?: never;
-  handler: (args: ZodInput<T>) => MaybePromise<CallToolResult>;
+  handler: (args: ZodParsed<T>) => MaybePromise<CallToolResult>;
 }
 
 export interface McpToolConfigJsonSchema extends McpToolConfigBase {

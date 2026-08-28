@@ -177,6 +177,17 @@ describe("zodToInputSchema", () => {
       required: ["name"],
     });
   });
+
+  it("inlines shared Zod 4 sub-schemas instead of emitting $ref", () => {
+    const address = z4.object({ street: z4.string(), zip: z4.string() });
+    const schema = z4.object({ home: address, work: address });
+    const result = zodToInputSchema(schema);
+
+    expect(result.properties?.home).toHaveProperty("type", "object");
+    expect(result.properties?.work).toHaveProperty("type", "object");
+    expect(result.properties?.work).not.toHaveProperty("$ref");
+    expect(result).not.toHaveProperty("$defs");
+  });
 });
 
 // ─── schemaFingerprint ───────────────────────────────────────────

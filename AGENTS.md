@@ -91,7 +91,7 @@ Don't manually adjust formatting — just run `pnpm lint:fix` if needed.
 - Tool names: `snake_case` (e.g., `search_catalog`)
 - Tool components: PascalCase + `Tool` suffix (e.g., `SearchCatalogTool`)
 - Handlers return `CallToolResult` with a `content` array — always (including error results with `isError: true`)
-- Peer deps: React ≥ 18, React DOM ≥ 18, Zod ≥ 3. Only runtime dep is `zod-to-json-schema`
+- Peer deps: React ≥ 18, React DOM ≥ 18, Zod `^3.25.0 || ^4.0.0`. Runtime dep `zod-to-json-schema` remains for classic Zod 3 schemas; Zod 4 / Mini use `zod/v4/core` `toJSONSchema`
 - Warnings use `warnOnce()` — dev-only, fires once per key to avoid console spam
 
 ## Boundaries
