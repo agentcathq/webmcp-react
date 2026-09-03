@@ -56,6 +56,7 @@
     "dev:nextjs": "pnpm --filter webmcp-react-nextjs-example dev",
     "build:extension": "pnpm --filter webmcp-bridge-extension build",
     "typecheck:extension": "pnpm --filter webmcp-bridge-extension typecheck",
+    "prepublishOnly": "pnpm build",
     "prepare": "husky"
   },
   "peerDependencies": {
