@@ -1,5 +1,4 @@
 import { useCallback, useContext, useEffect, useRef, useState } from "react";
-import { z } from "zod";
 import { MISSING_PROVIDER, WebMCPContext } from "../context";
 import type {
   CallToolResult,
@@ -8,8 +7,14 @@ import type {
   ToolDescriptor,
   ToolExecutionState,
   UseMcpToolReturn,
+  ZodObjectSchema,
 } from "../types";
-import { schemaFingerprint, zodToInputSchema } from "../utils/schema";
+import {
+  isZodObjectSchema,
+  parseZodInput,
+  schemaFingerprint,
+  zodToInputSchema,
+} from "../utils/schema";
 import { warnOnce } from "../utils/warn";
 
 const TOOL_OWNER_BY_NAME = new Map<string, symbol>();
@@ -46,13 +51,13 @@ const INITIAL_STATE: ToolExecutionState = {
   executionCount: 0,
 };
 
-export function useMcpTool<T extends z.ZodRawShape>(config: McpToolConfigZod<T>): UseMcpToolReturn;
+export function useMcpTool<T extends ZodObjectSchema>(
+  config: McpToolConfigZod<T>,
+): UseMcpToolReturn;
 
 export function useMcpTool(config: McpToolConfigJsonSchema): UseMcpToolReturn;
 
-export function useMcpTool(
-  config: McpToolConfigZod<z.ZodRawShape> | McpToolConfigJsonSchema,
-): UseMcpToolReturn {
+export function useMcpTool(config: McpToolConfigZod | McpToolConfigJsonSchema): UseMcpToolReturn {
   const ctx = useContext(WebMCPContext);
   if (ctx === MISSING_PROVIDER) {
     warnOnce(
@@ -61,16 +66,16 @@ export function useMcpTool(
     );
   }
 
-  const isZodPath = "input" in config && config.input instanceof z.ZodObject;
+  const isZodPath = "input" in config && isZodObjectSchema(config.input);
 
   const inputFingerprint = schemaFingerprint(
     isZodPath
-      ? (config as McpToolConfigZod<z.ZodRawShape>).input
+      ? (config as McpToolConfigZod).input
       : (config as McpToolConfigJsonSchema).inputSchema,
   );
   const outputFingerprint = schemaFingerprint(
     isZodPath
-      ? (config as McpToolConfigZod<z.ZodRawShape>).output
+      ? (config as McpToolConfigZod).output
       : (config as McpToolConfigJsonSchema).outputSchema,
   );
   const annotationsFingerprint = config.annotations ? JSON.stringify(config.annotations) : "";
@@ -105,12 +110,10 @@ export function useMcpTool(
     try {
       let validatedInput: Record<string, unknown> = input ?? {};
       const currentConfig = configRef.current;
-      const currentIsZod = "input" in currentConfig && currentConfig.input instanceof z.ZodObject;
+      const currentIsZod = "input" in currentConfig && isZodObjectSchema(currentConfig.input);
 
       if (currentIsZod) {
-        validatedInput = (currentConfig as McpToolConfigZod<z.ZodRawShape>).input.parse(
-          validatedInput,
-        );
+        validatedInput = parseZodInput((currentConfig as McpToolConfigZod).input, validatedInput);
       }
 
       const result = await handlerRef.current(validatedInput as Record<string, unknown>);
@@ -161,14 +164,14 @@ export function useMcpTool(
     const mc = document.modelContext;
     const cfg = configRef.current;
     const ownerToken = Symbol(cfg.name);
-    const zodPath = "input" in cfg && cfg.input instanceof z.ZodObject;
+    const zodPath = "input" in cfg && isZodObjectSchema(cfg.input);
 
     // Compute resolved schemas inside effect body to avoid per-render allocation
     const resolvedInputSchema = zodPath
-      ? zodToInputSchema((cfg as McpToolConfigZod<z.ZodRawShape>).input)
+      ? zodToInputSchema((cfg as McpToolConfigZod).input)
       : (cfg as McpToolConfigJsonSchema).inputSchema;
 
-    const zodOutput = zodPath ? (cfg as McpToolConfigZod<z.ZodRawShape>).output : undefined;
+    const zodOutput = zodPath ? (cfg as McpToolConfigZod).output : undefined;
     const resolvedOutputSchema = zodPath
       ? zodOutput
         ? zodToInputSchema(zodOutput)
@@ -191,11 +194,10 @@ export function useMcpTool(
         try {
           let validatedArgs = args;
           const currentConfig = configRef.current;
-          const currentIsZod =
-            "input" in currentConfig && currentConfig.input instanceof z.ZodObject;
+          const currentIsZod = "input" in currentConfig && isZodObjectSchema(currentConfig.input);
 
           if (currentIsZod) {
-            validatedArgs = (currentConfig as McpToolConfigZod<z.ZodRawShape>).input.parse(args);
+            validatedArgs = parseZodInput((currentConfig as McpToolConfigZod).input, args);
           }
 
           const result = await handlerRef.current(validatedArgs as Record<string, unknown>);

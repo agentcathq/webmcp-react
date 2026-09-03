@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
-import type { z } from "zod";
+import type * as z3 from "zod/v3";
+import type * as z4 from "zod/v4/core";
 
 export type MaybePromise<T> = T | Promise<T>;
 
@@ -87,12 +88,22 @@ interface McpToolConfigBase {
   onError?: (error: Error) => void;
 }
 
-export interface McpToolConfigZod<T extends z.ZodRawShape> extends McpToolConfigBase {
-  input: z.ZodObject<T>;
+export type ZodObjectSchema = z3.AnyZodObject | z4.$ZodObject;
+
+/** Parsed schema output — same semantics as Zod's `z.infer`. */
+export type ZodParsed<T extends ZodObjectSchema> = T extends z4.$ZodType
+  ? z4.output<T>
+  : T extends z3.ZodTypeAny
+    ? z3.infer<T>
+    : never;
+
+export interface McpToolConfigZod<T extends ZodObjectSchema = ZodObjectSchema>
+  extends McpToolConfigBase {
+  input: T;
   inputSchema?: never;
-  output?: z.ZodObject<z.ZodRawShape>;
+  output?: ZodObjectSchema;
   outputSchema?: never;
-  handler: (args: z.infer<z.ZodObject<T>>) => MaybePromise<CallToolResult>;
+  handler: (args: ZodParsed<T>) => MaybePromise<CallToolResult>;
 }
 
 export interface McpToolConfigJsonSchema extends McpToolConfigBase {
