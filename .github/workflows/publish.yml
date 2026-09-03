@@ -23,3 +23,20 @@ jobs:
       - run: pnpm build
       - run: pnpm test
       - run: npm publish --provenance --access public
+
+  publish-server:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/webmcp-server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - id: check
+        run: |
+          v=$(node -p "require('./package.json').version")
+          if npm view "webmcp-server@$v" version >/dev/null 2>&1; then echo "skip=true" >> "$GITHUB_OUTPUT"; fi
+      - if: steps.check.outputs.skip != 'true'
+        run: npm publish --provenance --access public

@@ -4,20 +4,6 @@ All notable changes to `webmcp-react` are documented here. The format is based o
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
-
-### Extension
-
-- The bridge extension now discovers and executes tools via
-  `document.modelContext.getTools()` / `executeTool()` (native Chrome 150.0.7861.0+ and the
-  webmcp-react 1.1.0 polyfill), falling back to the deprecated
-  `navigator.modelContextTesting` for pages on webmcp-react ≤1.0.0. Native Chrome removed
-  `modelContextTesting` in 152.0.7940.0, which had left the extension unable to see tools
-  on native Chrome.
-- MCP client cancellations (`notifications/cancelled`) are forwarded end-to-end: MCP SDK →
-  WebSocket `CANCEL_TOOL` → background → content scripts → `executeTool`'s `AbortSignal`,
-  aborting the tool handler's execution signal.
-
 ## 1.1.0
 
 Tracks Chrome 152–154 WebMCP changes: execution AbortSignals, the
@@ -57,6 +43,19 @@ Tracks Chrome 152–154 WebMCP changes: execution AbortSignals, the
 - **`navigator.modelContextTesting`.** Native Chrome removed it in 152.0.7940.0. The
   polyfill's shim now delegates to the same engine as `document.modelContext.executeTool()`
   and warns once in dev. It will be removed in webmcp-react 2.0.0.
+
+### Extension
+
+- The bridge extension now discovers and executes tools via
+  `document.modelContext.getTools()` / `executeTool()` (native Chrome 150.0.7861.0+ and the
+  webmcp-react 1.1.0 polyfill), falling back to the deprecated
+  `navigator.modelContextTesting` for pages on webmcp-react ≤1.0.0. Native Chrome removed
+  `modelContextTesting` in 152.0.7940.0, which had left the extension unable to see tools
+  on native Chrome.
+- MCP client cancellations (`notifications/cancelled`) are forwarded end-to-end: MCP SDK →
+  WebSocket `CANCEL_TOOL` → background → content scripts → `executeTool`'s `AbortSignal`,
+  aborting the tool handler's execution signal.
+- Ships as `webmcp-server` 0.2.0 (the bin is regenerated) and bridge extension 0.2.0.
 
 ## 1.0.0
 
