@@ -4,7 +4,17 @@ All notable changes to `webmcp-react` are documented here. The format is based o
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## 1.0.0
+
+First stable release. From here on, breaking changes to the public API bump the major version.
+
+### Added
+
+- **Zod 4 support.** The `zod` peer dependency range is now `^3.25.0 || ^4.0.0`. `useMcpTool`
+  accepts Zod 4 and Zod Mini object schemas for `input` / `output`, converts them to JSON Schema
+  with Zod's native `toJSONSchema`, and validates them through `zod/v4/core`. Classic Zod 3
+  schemas keep going through `zod-to-json-schema` and `schema.parse`. Zod 3.25 is the new floor
+  because it ships the `zod/v4/core` entry point the library imports.
 
 ### Changed
 
