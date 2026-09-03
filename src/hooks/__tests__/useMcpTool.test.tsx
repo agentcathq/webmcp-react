@@ -6,7 +6,12 @@ import { z } from "zod";
 import * as z3 from "zod/v3";
 import { _resetPolyfillConsumerCount, WebMCPProvider } from "../../context";
 import { cleanupPolyfill } from "../../polyfill";
-import type { CallToolResult, McpToolConfigJsonSchema, McpToolConfigZod } from "../../types";
+import type {
+  CallToolResult,
+  McpToolConfigJsonSchema,
+  McpToolConfigZod,
+  ToolDescriptor,
+} from "../../types";
 import { _resetWarnings } from "../../utils/warn";
 import { _resetToolOwners, useMcpTool } from "../useMcpTool";
 
@@ -627,7 +632,7 @@ describe("Strict Mode safety", () => {
               name: "greet",
               description: "Say hello",
               input: z.object({ name: z.string() }),
-              handler: async ({ name }) => makeResult(`hello ${name}`),
+              handler: async ({ name }: Record<string, unknown>) => makeResult(`hello ${name}`),
             }}
           />
         </WebMCPProvider>
@@ -973,7 +978,7 @@ describe("MCP integration", () => {
           name: "greet",
           description: "Say hello",
           input: z.object({ name: z.string() }),
-          handler: async ({ name }) => makeResult(`hello ${name}`),
+          handler: async ({ name }: Record<string, unknown>) => makeResult(`hello ${name}`),
         }}
       />,
     );
@@ -1532,5 +1537,204 @@ describe("native registerTool compatibility (void return / sync throw)", () => {
     expect(onError).not.toHaveBeenCalled();
     const last = onState.mock.calls.at(-1)?.[0];
     expect(last?.error).toBeNull();
+  });
+});
+
+// ─── Execution signal (Chrome 153+ shape) ────────────────────────
+
+describe("execution signal", () => {
+  function installFakeNative() {
+    const captured: ToolDescriptor[] = [];
+    const fake = {
+      registerTool: (tool: ToolDescriptor) => {
+        captured.push(tool);
+        return Promise.resolve(undefined);
+      },
+    };
+    Object.defineProperty(document, "modelContext", { value: fake, configurable: true });
+    return {
+      captured,
+      uninstall: () => {
+        delete (document as { modelContext?: unknown }).modelContext;
+      },
+    };
+  }
+
+  it("direct execute() passes a non-aborted AbortSignal to the handler", async () => {
+    const seen: Array<{ signal: AbortSignal }> = [];
+    const executeRef = { current: null as ExecuteFn | null };
+    renderWithProvider(
+      <ToolComponent
+        config={{
+          name: "sig_direct",
+          description: "d",
+          handler: async (_args, ctx) => {
+            seen.push(ctx);
+            return OK_RESULT;
+          },
+        }}
+        onExecuteRef={executeRef}
+      />,
+    );
+    await waitForRegistration();
+    await act(async () => {
+      await executeRef.current?.();
+    });
+    expect(seen).toHaveLength(1);
+    expect(seen[0].signal).toBeInstanceOf(AbortSignal);
+    expect(seen[0].signal.aborted).toBe(false);
+  });
+
+  it("direct execute() forwards a caller-provided signal", async () => {
+    let received: AbortSignal | undefined;
+    const executeRef = { current: null as ExecuteFn | null };
+    renderWithProvider(
+      <ToolComponent
+        config={{
+          name: "sig_forward",
+          description: "d",
+          handler: async (_args, { signal }) => {
+            received = signal;
+            return OK_RESULT;
+          },
+        }}
+        onExecuteRef={executeRef}
+      />,
+    );
+    await waitForRegistration();
+    const controller = new AbortController();
+    await act(async () => {
+      await executeRef.current?.({}, { signal: controller.signal });
+    });
+    expect(received).toBe(controller.signal);
+  });
+
+  it("aborted execution is cancellation: rethrows but no state.error, no onError", async () => {
+    const onError = vi.fn();
+    const executeRef = { current: null as ExecuteFn | null };
+    const { getByTestId } = renderWithProvider(
+      <ToolComponent
+        config={{
+          name: "sig_cancel",
+          description: "d",
+          onError,
+          handler: (_args, { signal }) =>
+            new Promise<CallToolResult>((_resolve, reject) => {
+              signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+            }),
+        }}
+        onExecuteRef={executeRef}
+      />,
+    );
+    await waitForRegistration();
+    const controller = new AbortController();
+    const exec = executeRef.current as ExecuteFn;
+    let rejected: unknown = null;
+    let promise!: Promise<CallToolResult>;
+    act(() => {
+      promise = exec({}, { signal: controller.signal });
+      promise.catch((e: unknown) => {
+        rejected = e;
+      });
+    });
+    await act(async () => {
+      controller.abort(new DOMException("user cancelled", "AbortError"));
+      await promise.catch(() => {});
+    });
+    expect((rejected as { name?: string })?.name).toBe("AbortError");
+    expect(onError).not.toHaveBeenCalled();
+    expect(getByTestId("error").textContent).toBe("none");
+    expect(getByTestId("executing").textContent).toBe("no");
+  });
+
+  it("descriptor execute forwards Chrome's signal and treats abort as cancellation", async () => {
+    const { captured, uninstall } = installFakeNative();
+    try {
+      const onError = vi.fn();
+      const { getByTestId } = renderWithProvider(
+        <ToolComponent
+          config={{
+            name: "sig_native",
+            description: "d",
+            onError,
+            handler: (_args, { signal }) =>
+              new Promise<CallToolResult>((_resolve, reject) => {
+                signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+              }),
+          }}
+        />,
+      );
+      await waitFor(() => expect(captured.length).toBeGreaterThan(0));
+      const controller = new AbortController();
+      let result!: Promise<CallToolResult>;
+      act(() => {
+        result = Promise.resolve(captured[0].execute({}, { signal: controller.signal }));
+      });
+      let settled: CallToolResult | undefined;
+      await act(async () => {
+        controller.abort();
+        settled = await result;
+      });
+      // The agent path resolves with an isError result rather than rejecting.
+      expect(settled?.isError).toBe(true);
+      expect(onError).not.toHaveBeenCalled();
+      expect(getByTestId("error").textContent).toBe("none");
+    } finally {
+      uninstall();
+    }
+  });
+
+  it("bare descriptor execute (Chrome <=152 shape) still provides a real signal", async () => {
+    const { captured, uninstall } = installFakeNative();
+    try {
+      let ctxSeen: { signal: AbortSignal } | undefined;
+      renderWithProvider(
+        <ToolComponent
+          config={{
+            name: "sig_bare",
+            description: "d",
+            handler: async (_args, ctx) => {
+              ctxSeen = ctx;
+              return OK_RESULT;
+            },
+          }}
+        />,
+      );
+      await waitFor(() => expect(captured.length).toBeGreaterThan(0));
+      await act(async () => {
+        // Chrome <=152 calls execute with a single argument.
+        await (captured[0].execute as unknown as (input: Record<string, unknown>) => unknown)({});
+      });
+      expect(ctxSeen?.signal).toBeInstanceOf(AbortSignal);
+      expect(ctxSeen?.signal.aborted).toBe(false);
+    } finally {
+      uninstall();
+    }
+  });
+
+  it("non-abort failures still set state.error and fire onError", async () => {
+    const onError = vi.fn();
+    const executeRef = { current: null as ExecuteFn | null };
+    const { getByTestId } = renderWithProvider(
+      <ToolComponent
+        config={{
+          name: "sig_realfail",
+          description: "d",
+          onError,
+          handler: async () => {
+            throw new Error("genuine failure");
+          },
+        }}
+        onExecuteRef={executeRef}
+      />,
+    );
+    await waitForRegistration();
+    const controller = new AbortController(); // present but never aborted
+    const exec = executeRef.current as ExecuteFn;
+    await act(async () => {
+      await exec({}, { signal: controller.signal }).catch(() => {});
+    });
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(getByTestId("error").textContent).toBe("genuine failure");
   });
 });

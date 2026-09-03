@@ -34,7 +34,8 @@ src/                    ← core library (your focus)
 ├── polyfill/           ← document.modelContext polyfill
 │   ├── index.ts        ← installPolyfill / cleanupPolyfill + polyfill marker
 │   ├── registry.ts     ← in-memory tool storage
-│   ├── testing-shim.ts ← simulates MCP client calls
+│   ├── execute.ts      ← shared execution engine (signals, serialization, errors)
+│   ├── testing-shim.ts ← DEPRECATED wrapper over execute.ts (removed in 2.0.0)
 │   └── validation.ts   ← input validation against JSON Schema
 └── utils/
     ├── schema.ts       ← Zod → JSON Schema conversion + schema fingerprinting
@@ -58,7 +59,7 @@ These patterns look like they could be simplified but exist for specific reasons
 
 **Schema fingerprinting** (`schemaFingerprint` in `utils/schema.ts`, used by `useMcpTool.ts`): useEffect deps use string fingerprints of schemas, not object references, to prevent infinite re-registration loops when schema objects are recreated each render. Don't switch to direct object comparison.
 
-**Dual execution paths**: Tools execute via `execute()` (internal/UI calls) and via the testing shim (external MCP client calls). Both paths update the same reactive state and fire the same callbacks. Changes to one path must be mirrored in the other.
+**Dual execution paths**: Tools execute via `execute()` (internal/UI calls) and via `document.modelContext.executeTool()` (external MCP client calls, native or polyfilled). Both paths update the same reactive state and fire the same callbacks. Changes to one path must be mirrored in the other.
 
 **Ref-wrapped config** (`configRef`, `handlerRef`, etc.): Refs wrap mutable config so the registration useEffect doesn't re-run on every render. These are not missed dependencies — they're intentional stability optimizations.
 
@@ -66,19 +67,24 @@ These patterns look like they could be simplified but exist for specific reasons
 
 **Native API detection**: The polyfill checks for native `document.modelContext` (document-only — it does not read `navigator.modelContext`) and skips installation if it exists. Don't remove this check — Chrome is shipping native WebMCP support.
 
-**AbortSignal-only unregistration**: There is no `unregisterTool`. Tools are removed by aborting the `AbortSignal` passed to `registerTool`. `useMcpTool` aborts its controller on cleanup; the registry's abort listener removes the tool. Don't reintroduce an imperative unregister method.
+**AbortSignal-only unregistration**: There is no `unregisterTool`. Tools are removed by aborting the `AbortSignal` passed to `registerTool`. `useMcpTool` aborts its controller on cleanup; the registry's abort listener removes the tool. Don't reintroduce an imperative unregister method. Unregistration does not cancel in-flight executions (Chrome 153.0.8008.0+); they run to completion.
 
-**Single-arg execute/handler**: `descriptor.execute(input)` and the user `handler(args)` take a single argument. There is no `ModelContextClient` second argument. Both execution paths must stay mirrored.
+**Two-arg execute/handler**: `descriptor.execute(input, { signal })` and the user
+`handler(args, ctx)` receive the execution `AbortSignal` as their second argument (Chrome
+153+ shape). There is still no `ModelContextClient`. A missing second argument at runtime
+(Chrome ≤152) is substituted with a never-aborting signal. Both execution paths must stay
+mirrored — they share `runHandler` in `useMcpTool.ts` and `runTool` in
+`polyfill/execute.ts`.
 
 ## Testing
 
 - **Framework**: Vitest + React Testing Library + jsdom
 - **Location**: `__tests__/` directories adjacent to source files
 - **StrictMode**: All tests must pass under React StrictMode (double-mount behavior)
-- **Testing shim**: `polyfill/testing-shim.ts` simulates external MCP client calls — use it in tests to verify the full registration → execution → state update cycle
+- **External-call path**: `document.modelContext.getTools()` / `executeTool()` is the consumer API — use it in tests to verify the full registration → execution → state update cycle. `navigator.modelContextTesting` (`polyfill/testing-shim.ts`) delegates to the same engine but is deprecated and is removed in 2.0.0; don't write new tests against it
 - **Coverage areas**: Registration lifecycle, execution state, error handling, input validation, SSR safety, StrictMode compatibility
 
-When adding features, write tests that cover both execution paths (direct `execute()` and testing shim `executeTool()`).
+When adding features, write tests that cover both execution paths (direct `execute()` and `document.modelContext.executeTool()`).
 
 ## Code Style
 

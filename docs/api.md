@@ -1,6 +1,6 @@
 # API Reference
 
-This library targets the current [WebMCP](https://github.com/webmachinelearning/webmcp) spec. The registration API lives on `document.modelContext` (an `EventTarget`), and the testing/consumer API lives on `navigator.modelContextTesting`.
+This library targets the current [WebMCP](https://github.com/webmachinelearning/webmcp) spec. Both the registration and consumer APIs live on `document.modelContext` (an `EventTarget`): `registerTool` on the registration side, `getTools()`/`executeTool()` on the consumer side. `navigator.modelContextTesting` is a deprecated wrapper over the same consumer engine.
 
 ## `<WebMCPProvider>`
 
@@ -43,11 +43,11 @@ Registers a tool on `document.modelContext`. Automatically unregisters on unmoun
 | `output`      | `z.ZodObject`                   | Optional Zod schema for outputs (library extension; see below) |
 | `annotations` | `ToolAnnotations`               | Optional behavior hints (`readOnlyHint`, `untrustedContentHint`) |
 | `exposedTo`   | `string[]`                      | Optional list of trustworthy origins this tool is exposed to across frames |
-| `handler`     | `(args) => CallToolResult \| Promise<CallToolResult>` | Tool implementation. Receives a single argument (the parsed input) |
+| `handler`     | `(args, ctx) => CallToolResult \| Promise<CallToolResult>` | Tool implementation. Receives the parsed input and `ctx: { signal: AbortSignal }`; the signal aborts when the agent cancels the execution (Chrome 153+; otherwise a never-aborting substitute) |
 | `onSuccess`   | `(result) => void`              | Optional callback on success                                   |
 | `onError`     | `(error) => void`               | Optional callback on error                                     |
 
-The `handler` takes a **single argument** — the validated input object. There is no second `client` argument.
+The `handler` receives the validated input object and a second `ctx` argument containing the execution `AbortSignal`. Handlers that declare a single parameter keep working.
 
 ### JSON Schema config
 
@@ -80,10 +80,19 @@ const { state, execute, reset } = useMcpTool({ ... });
 | `state.lastResult`     | `CallToolResult \| null`              | Most recent result                 |
 | `state.error`          | `Error \| null`                       | Most recent error                  |
 | `state.executionCount` | `number`                              | Total successful executions        |
-| `execute(input?)`      | `(input?) => Promise<CallToolResult>` | Manually invoke the tool           |
+| `execute(input?, { signal }?)` | `(input?, options?) => Promise<CallToolResult>` | Manually invoke the tool  |
 | `reset()`              | `() => void`                          | Reset state to initial values      |
 
 `execute()` (the UI/direct path) throws if validation or handler logic fails. The agent/testing-shim path returns a `CallToolResult` with `isError: true` instead. Both paths update the same reactive state and fire the same `onSuccess`/`onError` callbacks.
+
+### Cancellation
+
+Each execution gets its own `AbortSignal`, passed to the handler as `ctx.signal`. On
+Chrome 153.0.8007.0+ (and via the polyfill's `executeTool`) it aborts when the caller
+cancels. When an aborted execution's handler rejects, the hook treats it as
+**cancellation**: `isExecuting` clears, but `state.error` stays untouched and `onError`
+does not fire. Unregistering a tool (unmount) does **not** cancel in-flight executions
+(Chrome 153.0.8008.0+ behavior).
 
 ## Results: `CallToolResult`
 
@@ -104,7 +113,20 @@ interface CallToolResult {
 When native WebMCP is unavailable, the provider installs a polyfill that exposes:
 
 - `document.modelContext` — the registration API (an `EventTarget`). `registerTool(tool, options?)` returns a `Promise<undefined>` that **rejects** on invalid input (see below). Unregistration is **AbortSignal-only** — pass `{ signal }` and abort it to remove the tool. There is no `unregisterTool`.
-- `navigator.modelContextTesting` — the consumer/testing API (`listTools()`, `executeTool(name, argsJson, options?)`, `registerToolsChangedCallback(cb)`, `getCrossDocumentScriptToolResult()`). Browser extensions and tests use this to discover and invoke tools.
+- `document.modelContext.getTools(options?)` / `executeTool(tool, inputArguments, options?)`
+  — the consumer API (same shape as native Chrome). `getTools()` resolves sorted, fresh
+  `RegisteredTool` objects whose `inputSchema` is a deep-copied **object**;
+  `executeTool` accepts a JSON string or object input, forwards `options.signal` into the
+  tool's execution signal, rejects `UnknownError` on failure, and — unlike native Chrome —
+  validates input against `inputSchema` (`OperationError`).
+- `navigator.modelContextTesting` — **deprecated** wrapper over the same engine
+  (`listTools()` keeps returning a JSON-string `inputSchema`); removed in 2.0.0.
+
+| Chrome | Behavior this library tracks |
+| --- | --- |
+| ≤152 | `execute(input)` — no tool-side signal (the library substitutes one); `navigator.modelContextTesting` removed in 152.0.7940.0 |
+| 153 | `execute(input, { signal })`; unregistration no longer cancels in-flight executions (153.0.8008.0+) |
+| 154 | `RegisteredTool.inputSchema` is an object (was a JSON string) |
 
 The native API is detected by reading `document.modelContext` only; the polyfill marks itself with `__isWebMCPPolyfill` so native support short-circuits installation.
 
