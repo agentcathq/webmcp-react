@@ -367,6 +367,23 @@ function handleServerMessage(data: WsMessageFromServer) {
       );
       break;
     }
+    case "CANCEL_TOOL": {
+      const { requestId } = data;
+      const tabId = pendingCalls.get(requestId);
+      if (tabId === undefined) break;
+      // Drop the pending entry so the late error TOOL_RESULT from the page is ignored.
+      pendingCalls.delete(requestId);
+      if (DEBUG) console.log("[WebMCP Bridge] CANCEL_TOOL for tab", tabId, requestId);
+      chrome.tabs.sendMessage(
+        tabId,
+        { type: "CANCEL_TOOL", requestId } satisfies RuntimeMessage,
+        () => {
+          // Touch lastError so a closed tab doesn't log an unchecked-error warning.
+          void chrome.runtime.lastError;
+        },
+      );
+      break;
+    }
   }
 }
 

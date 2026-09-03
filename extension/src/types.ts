@@ -1,15 +1,40 @@
+/** @deprecated Removed from native Chrome in 152; kept as a fallback for pages on webmcp-react <=1.0.0. */
 interface ModelContextTesting {
   listTools(): BrowserTool[];
   executeTool(
     toolName: string,
     inputArgsJson: string,
+    options?: { signal?: AbortSignal },
   ): Promise<string | null>;
   registerToolsChangedCallback(callback: () => void): void;
+}
+
+export interface PageRegisteredTool {
+  name: string;
+  title?: string;
+  description: string;
+  /** JSON string on Chrome <=153, object on Chrome 154+ / webmcp-react 1.1.0 polyfill. */
+  inputSchema?: string | object;
+  annotations?: Record<string, unknown>;
+  window?: Window;
+  origin?: string;
+}
+
+export interface PageModelContext extends EventTarget {
+  getTools?(options?: { fromOrigins?: string[] }): Promise<PageRegisteredTool[]>;
+  executeTool?(
+    tool: PageRegisteredTool,
+    inputArguments: string | object,
+    options?: { signal?: AbortSignal },
+  ): Promise<string | null>;
 }
 
 declare global {
   interface Navigator {
     modelContextTesting?: ModelContextTesting;
+  }
+  interface Document {
+    modelContext?: PageModelContext;
   }
 }
 
@@ -44,11 +69,17 @@ export interface PageRequestToolsMessage {
   type: "WEBMCP_REQUEST_TOOLS";
 }
 
+export interface PageCancelToolMessage {
+  type: "WEBMCP_CANCEL_TOOL";
+  requestId: string;
+}
+
 export type PageMessage =
   | PageToolsUpdatedMessage
   | PageToolResultMessage
   | PageExecuteToolMessage
-  | PageRequestToolsMessage;
+  | PageRequestToolsMessage
+  | PageCancelToolMessage;
 
 export interface RuntimeToolsUpdatedMessage {
   type: "TOOLS_UPDATED";
@@ -71,6 +102,11 @@ export interface RuntimeExecuteToolMessage {
 
 export interface RuntimeRequestToolsMessage {
   type: "REQUEST_TOOLS";
+}
+
+export interface RuntimeCancelToolMessage {
+  type: "CANCEL_TOOL";
+  requestId: string;
 }
 
 export interface RuntimeGetStatusMessage {
@@ -119,6 +155,7 @@ export type RuntimeMessage =
   | RuntimeToolResultMessage
   | RuntimeExecuteToolMessage
   | RuntimeRequestToolsMessage
+  | RuntimeCancelToolMessage
   | RuntimeGetStatusMessage
   | RuntimeActivateTabMessage
   | RuntimeActivateDomainMessage
@@ -152,6 +189,11 @@ export interface WsCallToolRequest {
   argsJson: string;
 }
 
+export interface WsCancelToolRequest {
+  type: "CANCEL_TOOL";
+  requestId: string;
+}
+
 export interface WsToolResultResponse {
   type: "TOOL_RESULT";
   requestId: string;
@@ -165,7 +207,8 @@ export interface WsToolsChangedNotification {
 
 export type WsMessageFromServer =
   | WsListToolsRequest
-  | WsCallToolRequest;
+  | WsCallToolRequest
+  | WsCancelToolRequest;
 
 export type WsMessageFromExtension =
   | WsToolsListResponse

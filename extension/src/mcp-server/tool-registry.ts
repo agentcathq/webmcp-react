@@ -1,6 +1,7 @@
 import type {
   AggregatedTool,
   WsCallToolRequest,
+  WsCancelToolRequest,
   WsMessageFromExtension,
 } from "../types";
 import type { WebSocket } from "ws";
@@ -12,6 +13,8 @@ interface PendingCall {
   resolve: (value: { content: Array<{ type: string; text: string }>; isError?: boolean }) => void;
   reject: (error: Error) => void;
   timer: ReturnType<typeof setTimeout>;
+  /** Detaches the caller's abort listener; call whenever the call stops being pending. */
+  cleanup?: () => void;
 }
 
 export class ToolRegistry {
@@ -47,6 +50,7 @@ export class ToolRegistry {
   async callTool(
     name: string,
     args: Record<string, unknown>,
+    signal?: AbortSignal,
   ): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> {
     const match = NAMESPACED_RE.exec(name);
     if (!match) {
@@ -82,19 +86,52 @@ export class ToolRegistry {
       };
     }
 
+    if (signal?.aborted) {
+      const err = new Error("Tool call aborted by client");
+      err.name = "AbortError";
+      throw err;
+    }
+
     const requestId = crypto.randomUUID();
     const ws = this.ws;
 
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
+      const onAbort = () => {
+        const pending = this.pendingCalls.get(requestId);
+        if (!pending) return;
+        clearTimeout(pending.timer);
         this.pendingCalls.delete(requestId);
+        if (ws.readyState === ws.OPEN) {
+          ws.send(
+            JSON.stringify({ type: "CANCEL_TOOL", requestId } satisfies WsCancelToolRequest),
+          );
+        }
+        const err = new Error("Tool call aborted by client");
+        err.name = "AbortError";
+        reject(err);
+      };
+      signal?.addEventListener("abort", onAbort, { once: true });
+
+      const timer = setTimeout(() => {
+        signal?.removeEventListener("abort", onAbort);
+        this.pendingCalls.delete(requestId);
+        if (ws.readyState === ws.OPEN) {
+          ws.send(
+            JSON.stringify({ type: "CANCEL_TOOL", requestId } satisfies WsCancelToolRequest),
+          );
+        }
         resolve({
           isError: true,
           content: [{ type: "text", text: `Tool call "${name}" timed out after ${CALL_TIMEOUT}ms` }],
         });
       }, CALL_TIMEOUT);
 
-      this.pendingCalls.set(requestId, { resolve, reject, timer });
+      this.pendingCalls.set(requestId, {
+        resolve,
+        reject,
+        timer,
+        cleanup: () => signal?.removeEventListener("abort", onAbort),
+      });
 
       const message: WsCallToolRequest = {
         type: "CALL_TOOL",
@@ -128,6 +165,7 @@ export class ToolRegistry {
         if (!pending) break;
 
         clearTimeout(pending.timer);
+        pending.cleanup?.();
         this.pendingCalls.delete(data.requestId);
 
         if (data.error) {
@@ -158,6 +196,7 @@ export class ToolRegistry {
   clearConnection() {
     for (const [requestId, pending] of this.pendingCalls) {
       clearTimeout(pending.timer);
+      pending.cleanup?.();
       pending.resolve({
         isError: true,
         content: [{ type: "text", text: "Extension disconnected. Tool call aborted." }],

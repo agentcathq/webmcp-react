@@ -8,6 +8,7 @@ import { StartGameTool } from "./tools/StartGameTool";
 import { GuessWordTool } from "./tools/GuessWordTool";
 import { GameStatusTool } from "./tools/GameStatusTool";
 import { HintTool } from "./tools/HintTool";
+import { SlowHintTool } from "./tools/SlowHintTool";
 import {
   createInitialState,
   getLetterStatuses,
@@ -146,6 +147,7 @@ function WordleGame() {
       )}
       {showPlayingTools && <GameStatusTool gameState={gameState} />}
       {showHintTool && <HintTool gameState={gameState} />}
+      <SlowHintTool />
 
       <header className="game-header">
         <h1>WebMCP Wordle</h1>
