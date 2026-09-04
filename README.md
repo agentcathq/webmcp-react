@@ -1,36 +1,30 @@
 # webmcp-react
 
-React hooks for exposing typed tools on `document.modelContext`, aligned with the current [WebMCP](https://github.com/webmachinelearning/webmcp) spec.
+React hooks for exposing typed tools on `document.modelContext`, aligned with the current [WebMCP](https://github.com/webmachinelearning/webmcp) specification.
 
 [![npm version](https://img.shields.io/npm/v/webmcp-react)](https://www.npmjs.com/package/webmcp-react)
+[![npm downloads](https://img.shields.io/npm/dm/webmcp-react)](https://www.npmjs.com/package/webmcp-react)
 [![license](https://img.shields.io/npm/l/webmcp-react)](./LICENSE)
-[![CI](https://github.com/MCPCat/webmcp-react/actions/workflows/ci.yml/badge.svg)](https://github.com/MCPCat/webmcp-react/actions/workflows/ci.yml)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/MCPCat/webmcp-react/pulls)
-
-> Experimental. WebMCP is still evolving, so small API and behavior changes should be expected.
+[![CI](https://github.com/agentcathq/webmcp-react/actions/workflows/ci.yml/badge.svg)](https://github.com/agentcathq/webmcp-react/actions/workflows/ci.yml)
+[![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue.svg)](./tsconfig.json)
 
 - **Zod-first.** Define inputs with Zod and get full type inference in handlers
-- **JSON Schema fallback.** Pass raw JSON Schema when you don't want Zod
-- **Built-in polyfill.** Uses a lightweight polyfill when native WebMCP is unavailable
+- **JSON Schema support.** Pass raw JSON Schema when you do not use Zod
+- **Built-in polyfill.** Installs a lightweight polyfill when native WebMCP is unavailable
 - **SSR-safe.** Works with Next.js, Remix, and other server-rendering frameworks
-- **StrictMode safe.** Avoids duplicate registrations and orphaned tools
+- **StrictMode-safe.** Prevents duplicate registrations and orphaned tools
+- **Spec-aligned.** Tracks the WebMCP specification and native Chrome behavior release by release
+
+## Requirements
+
+- React 18 or later
+- Zod 3.25 or later, or Zod 4, as a peer dependency. Tools can also be defined with [JSON Schema](#json-schema).
 
 ## Install
 
 ```bash
 npm install webmcp-react zod
 ```
-
-## Playground
-
-Try it live: [**WebMCP Wordle Demo**](https://agentcathq.github.io/webmcp-react/playground/)
-
-A fully playable Wordle clone that showcases `webmcp-react` hooks. Tools dynamically register and unregister as the game moves through phases (idle, playing, won/lost), and guesses can be made via keyboard or through an AI agent. Includes a DevPanel for inspecting tool state and an easy-mode toggle that enables a hint tool.
-
-To play with an AI agent:
-
-- **Codex** — Open the demo in Codex and ask it to play. Codex discovers and calls the page's WebMCP tools directly.
-- **Claude, Cursor, and other MCP clients** — Install the [WebMCP Bridge extension](https://chromewebstore.google.com/detail/webmcp-bridge/chgjbookknohehmaocfijekhaocaanaf), open the demo in Chrome, and activate the extension for the page.
 
 ## Quick start
 
@@ -61,36 +55,47 @@ export default function App() {
 }
 ```
 
-That's it. The tool is registered on `document.modelContext` and can be called by WebMCP-compatible agents.
+The tool is now registered on `document.modelContext` and any WebMCP-compatible agent can call it.
 
-### Using an AI agent?
+### Agent skills
 
-This repo ships with [agent skills](./skills) that can set up webmcp-react and scaffold tools for you. Install them with the [skills CLI](https://skills.sh):
+This repository ships [agent skills](./skills) that install webmcp-react and scaffold tools for you. Install them with the [skills CLI](https://skills.sh):
 
 ```bash
-npx skills add mcpcat/webmcp-react
+npx skills add agentcathq/webmcp-react
 ```
 
-Works with Cursor, Claude Code, GitHub Copilot, Cline, and [18+ other agents](https://vercel.com/docs/agent-resources/skills).
+The skills work with Cursor, Claude Code, GitHub Copilot, Cline, and [18+ other agents](https://vercel.com/docs/agent-resources/skills).
+
+## Playground
+
+Try it live: [**WebMCP Wordle Demo**](https://agentcathq.github.io/webmcp-react/playground/)
+
+The playground is a fully playable Wordle clone built on `webmcp-react` hooks. Tools register and unregister as the game moves through its phases (idle, playing, won, lost). You can make guesses with the keyboard or through an AI agent. A DevPanel shows the current tool state, and an easy-mode toggle enables a hint tool.
+
+To play with an AI agent:
+
+- **Codex.** Open the demo in Codex and ask it to play. Codex discovers and calls the page's WebMCP tools directly.
+- **Claude, Cursor, and other MCP clients.** Install the [WebMCP Bridge extension](https://chromewebstore.google.com/detail/webmcp-bridge/chgjbookknohehmaocfijekhaocaanaf), open the demo in Chrome, and activate the extension for the page.
 
 ## How it works
 
-[WebMCP](https://github.com/webmachinelearning/webmcp) is an emerging web standard that adds `document.modelContext` to the browser, an API that lets any page expose typed, callable tools to AI agents. Native browser support is still experimental and may evolve quickly. Chrome recently [released it in Early Preview](https://developer.chrome.com/blog/webmcp-epp).
+[WebMCP](https://github.com/webmachinelearning/webmcp) is a proposed web standard from the W3C Web Machine Learning Community Group. It adds `document.modelContext` to the browser, an API that lets any page expose typed, callable tools to AI agents. Chrome ships the API in [Early Preview](https://developer.chrome.com/blog/webmcp-epp).
 
-This library provides React bindings for that API. `<WebMCPProvider>` installs a polyfill (skipped when native support exists), and each `useMcpTool` call registers a tool that agents can discover and execute.
+This library provides the React bindings for that API. `<WebMCPProvider>` installs a polyfill when native support is absent, and each `useMcpTool` call registers a tool that agents can discover and execute.
 
 ![How webmcp-react works](./docs/architecture.svg)
 
 ## Connect to AI clients
 
-Agents with built-in WebMCP browser support, like Codex, can discover and call tools directly from the page. For clients that can't access `document.modelContext` directly, the [WebMCP Bridge extension](https://chromewebstore.google.com/detail/webmcp-bridge/chgjbookknohehmaocfijekhaocaanaf) connects your registered tools to any MCP client.
+Agents with built-in WebMCP browser support, such as Codex, discover and call tools directly from the page. Clients that cannot access `document.modelContext` directly, such as Claude Code and Cursor, connect through the [WebMCP Bridge extension](https://chromewebstore.google.com/detail/webmcp-bridge/chgjbookknohehmaocfijekhaocaanaf), which exposes your registered tools to any MCP client.
 
-1. Install the extension from the [Chrome Web Store](https://chromewebstore.google.com/detail/webmcp-bridge/chgjbookknohehmaocfijekhaocaanaf)
-2. Configure your MCP client — see the [extension setup guide](./extension/README.md) for details
+1. Install the extension from the [Chrome Web Store](https://chromewebstore.google.com/detail/webmcp-bridge/chgjbookknohehmaocfijekhaocaanaf).
+2. Configure your MCP client. See the [extension setup guide](./extension/README.md) for details.
 
-Once Chrome supports this bridging natively, I'll deprecate the extension.
+The extension will be deprecated when Chrome provides native bridging to desktop clients.
 
-## Recipes
+## Usage
 
 ### Execution state
 
@@ -120,9 +125,25 @@ function TranslateTool() {
 }
 ```
 
+### Cancellation
+
+Each execution receives its own `AbortSignal`. Pass it to `fetch` and other cancellable work. Chrome 153+ aborts the signal when the agent cancels the call. On older browsers the library substitutes a never-aborting signal, so the second argument is always safe to use:
+
+```tsx
+useMcpTool({
+  name: "fetch_report",
+  description: "Fetch a report by ID",
+  input: z.object({ id: z.string() }),
+  handler: async ({ id }, { signal }) => {
+    const res = await fetch(`/api/reports/${id}`, { signal });
+    return { content: [{ type: "text", text: await res.text() }] };
+  },
+});
+```
+
 ### Title and annotations
 
-Give a tool a human-friendly display `title`, and hint AI agents about its behavior with `annotations`. Per the current WebMCP spec, annotations are limited to `readOnlyHint` and `untrustedContentHint`:
+Give a tool a human-friendly display `title`, and describe its behavior to agents with `annotations`. The current WebMCP specification defines two annotations: `readOnlyHint` and `untrustedContentHint`.
 
 ```tsx
 useMcpTool({
@@ -139,7 +160,7 @@ useMcpTool({
 
 ### Dynamic tools
 
-Tools register on mount and unregister on unmount. Conditionally render them like any React component:
+Tools register on mount and unregister on unmount. Render them conditionally like any React component:
 
 ```tsx
 function App({ user }) {
@@ -169,7 +190,7 @@ useMcpTool({
 
 ### JSON Schema
 
-Don't want Zod? Pass `inputSchema` directly:
+Pass `inputSchema` directly to define a tool without Zod:
 
 ```tsx
 useMcpTool({
@@ -194,36 +215,30 @@ useMcpTool({
 
 ### SSR
 
-Works with Next.js, Remix, and any server-rendering framework out of the box. The build includes a `"use client"` banner, so no extra configuration is needed.
+The library works with Next.js, Remix, and any server-rendering framework. The build includes a `"use client"` banner, so no extra configuration is needed.
 
-## What's new in 1.1.0
+## Browser support
 
-- **Handlers get an execution `AbortSignal`**: `handler(args, { signal })`. Chrome 153+
-  aborts it when the agent cancels the call; on older Chrome the library substitutes a
-  never-aborting signal, so `fetch(url, { signal })` is always safe. One-argument handlers
-  keep working.
-- **Consumer API in the polyfill**: `document.modelContext.getTools()` /
-  `executeTool(tool, args, { signal }?)` — the same surface native Chrome 152+ ships.
-- **`navigator.modelContextTesting` is deprecated** (removed from native Chrome in 152;
-  removed from this library in 2.0.0).
+| Environment | Behavior |
+| --- | --- |
+| Chrome with native `document.modelContext` | The library uses the native API. The polyfill is not installed. |
+| All other browsers | The library installs its polyfill, which implements the registration and consumer APIs. |
 
-## Breaking changes in 0.2.0
+The polyfill follows native Chrome behavior. See the [polyfill section of the API reference](./docs/api.md#polyfill-behavior) for the exact Chrome versions each behavior tracks.
 
-0.2.0 realigns the library with the current [WebMCP](https://github.com/webmachinelearning/webmcp) spec. If you're upgrading from 0.1.0:
+## Versioning and stability
 
-- **API moved to `document.modelContext`.** Tools register on `document.modelContext` instead of `navigator.modelContext`. (The testing/consumer API stays on `navigator.modelContextTesting`.)
-- **`registerTool` returns a `Promise`.** The polyfill's `registerTool(tool, options?)` returns a `Promise<undefined>` that rejects on invalid input (bad/duplicate/empty name, empty description, non-function execute, non-serializable `inputSchema`, untrustworthy `exposedTo` origin, or an already-aborted signal).
-- **Unregistration is AbortSignal-only.** There is no `unregisterTool` — pass `{ signal }` and abort it. `useMcpTool` does this for you on unmount.
-- **Handlers take a single argument.** `handler(args)` / `execute(input)` no longer receive a second `client` argument; `ModelContextClient` and `requestUserInteraction` are removed.
-- **`annotations` narrowed to `{ readOnlyHint, untrustedContentHint }`.** The classic hints (`destructiveHint`, `idempotentHint`, `openWorldHint`) and `annotations.title` are removed. A new top-level `title?` field replaces `annotations.title`.
-- **New `exposedTo?: string[]`** controls cross-frame origin visibility (changing it re-registers the tool).
-- **New `toolchange` event.** `document.modelContext` is an `EventTarget` that fires a bare `toolchange` event on tool register/unregister; an `ontoolchange` handler is also supported.
+`webmcp-react` follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Breaking changes to the public API bump the major version. Every release is documented in the [changelog](./CHANGELOG.md), including the WebMCP specification and Chrome changes it tracks.
 
-`outputSchema` (Zod `output` / JSON-Schema `outputSchema`) and `structuredContent` on results are retained as documented library extensions.
+`outputSchema` and `structuredContent` are documented library extensions to the WebMCP specification. They are part of the public API and follow the same versioning policy.
 
 ## API
 
 See the [full API reference](./docs/api.md).
+
+## Contributing
+
+Bug reports, feature requests, and pull requests are welcome. Read the [contributing guide](./CONTRIBUTING.md) before you open a pull request. This project follows the [Contributor Covenant Code of Conduct](./CODE_OF_CONDUCT.md).
 
 ## License
 
