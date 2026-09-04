@@ -139,3 +139,46 @@ describe("an in-app route change", () => {
     expect(await statusToolNames(ctx.messageListeners, 7)).toEqual([]);
   });
 });
+
+describe("TOOLS_UPDATED before the persisted activations load", () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  it("keeps the tools of a domain that was activated in a previous session", async () => {
+    let releaseStorage: () => void = () => {};
+    const storageRead = new Promise<void>((r) => {
+      releaseStorage = r;
+    });
+
+    const { messageListeners } = installChrome({
+      domains: ["https://app.example"],
+      storageDelay: () => storageRead,
+    });
+
+    await import("../background");
+
+    // The page registers while chrome.storage.local.get is still in flight.
+    await send(messageListeners, { type: "TOOLS_UPDATED", tools: TOOLS }, SENDER);
+
+    releaseStorage();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(await statusToolNames(messageListeners, 7)).toEqual(["reflow_run"]);
+  });
+
+  it("still drops the tools of a tab that is not activated", async () => {
+    const { messageListeners } = installChrome({
+      domains: [],
+      storageDelay: async () => {},
+    });
+
+    await import("../background");
+    await send(messageListeners, { type: "TOOLS_UPDATED", tools: TOOLS }, SENDER);
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(await statusToolNames(messageListeners, 7)).toEqual([]);
+  });
+});
+
+

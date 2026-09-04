@@ -170,6 +170,11 @@ async function loadPersistedDomains() {
   }
 }
 
+// Resolves once the persisted activations are in memory. A service worker
+// restart re-runs this file, and a content script can report its tools before
+// storage has been read, so handlers that decide on activation wait for this.
+const domainsReady: Promise<void> = loadPersistedDomains();
+
 async function registerContentScriptsForDomains(origins: string[]) {
   const scripts: chrome.scripting.RegisteredContentScript[] = [];
   for (const origin of origins) {
@@ -412,17 +417,26 @@ chrome.runtime.onMessage.addListener(
       case "TOOLS_UPDATED": {
         const tabId = sender.tab?.id;
         if (tabId == null) break;
-        if (!isTabAuthorized(tabId, sender.tab?.url)) {
-          // Stale content script from a deactivated tab — purge and ignore
-          purgeTabTools(tabId);
-          break;
-        }
-        tabTools.set(tabId, {
-          tools: message.tools,
-          title: sanitize(sender.tab?.title ?? "", 500),
-          url: sanitize(sender.tab?.url ?? "", 500),
+        const { tools } = message;
+        const url = sender.tab?.url;
+        const title = sender.tab?.title;
+        // An activated domain reads as unauthorized until storage has been
+        // read, and this branch purges rather than defers, so a page that
+        // registers during that window loses its tools until it registers
+        // again. Decide once the activations are in memory.
+        void domainsReady.then(() => {
+          if (!isTabAuthorized(tabId, url)) {
+            // Stale content script from a deactivated tab — purge and ignore
+            purgeTabTools(tabId);
+            return;
+          }
+          tabTools.set(tabId, {
+            tools,
+            title: sanitize(title ?? "", 500),
+            url: sanitize(url ?? "", 500),
+          });
+          notifyToolsChanged();
         });
-        notifyToolsChanged();
         break;
       }
       case "TOOL_RESULT": {
@@ -580,6 +594,5 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
   }
 });
 
-// Load persisted domains and start WebSocket
-loadPersistedDomains();
+// Start the WebSocket; the persisted activations are already loading
 connectWebSocket();
