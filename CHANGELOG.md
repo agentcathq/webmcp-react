@@ -4,6 +4,24 @@ All notable changes to `webmcp-react` are documented here. The format is based o
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Extension
+
+- A tab no longer loses its tools on an in-app route change that only alters the URL
+  fragment (hash routers). `tabs.onUpdated` reports such same-document navigations as
+  `loading`, and the bridge purged the tab even though its content scripts never re-ran.
+  Route changes made with `history.pushState` still purge; that is tracked as a follow-up.
+  (#59)
+- Tool reports that arrive while the service worker is still reading its persisted
+  activations are no longer purged; the bridge waits for the activations to load. The
+  popup's status request and domain activation/deactivation wait as well, so a worker
+  restart no longer shows an active domain as off or undoes a deactivate. (#59)
+- A persisted domain whose host permission is gone (for example after a reinstall) is
+  dropped at startup instead of being reported as active while no content script can run
+  on it. (#59)
+- Ships as bridge extension 0.2.1. `webmcp-server` is unchanged at 0.2.0.
+
 ## 1.1.0
 
 Tracks Chrome 152–154 WebMCP changes: execution AbortSignals, the
