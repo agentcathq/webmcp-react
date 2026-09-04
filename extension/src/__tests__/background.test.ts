@@ -100,46 +100,6 @@ const SENDER = {
   tab: { id: 7, url: "https://app.example/flow", title: "Flow" },
 };
 
-describe("an in-app route change", () => {
-  beforeEach(() => {
-    vi.resetModules();
-  });
-
-  async function loadWithTools() {
-    const ctx = installChrome({
-      domains: ["https://app.example"],
-      storageDelay: async () => {},
-    });
-    await import("../background");
-    await send(ctx.messageListeners, { type: "TOOLS_UPDATED", tools: TOOLS }, SENDER);
-    await new Promise((r) => setTimeout(r, 0));
-    expect(await statusToolNames(ctx.messageListeners, 7)).toEqual(["reflow_run"]);
-    return ctx;
-  }
-
-  it("keeps the tools when only the fragment changes", async () => {
-    const ctx = await loadWithTools();
-
-    for (const l of ctx.updatedListeners) {
-      l(7, { status: "loading", url: "https://app.example/flow#/regions?search=" });
-    }
-    await new Promise((r) => setTimeout(r, 0));
-
-    expect(await statusToolNames(ctx.messageListeners, 7)).toEqual(["reflow_run"]);
-  });
-
-  it("drops them when the document itself changes", async () => {
-    const ctx = await loadWithTools();
-
-    for (const l of ctx.updatedListeners) {
-      l(7, { status: "loading", url: "https://app.example/other" });
-    }
-    await new Promise((r) => setTimeout(r, 0));
-
-    expect(await statusToolNames(ctx.messageListeners, 7)).toEqual([]);
-  });
-});
-
 describe("TOOLS_UPDATED before the persisted activations load", () => {
   beforeEach(() => {
     vi.resetModules();
@@ -182,3 +142,79 @@ describe("TOOLS_UPDATED before the persisted activations load", () => {
 });
 
 
+describe("a persisted domain whose host permission is gone", () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  it("is dropped, so the popup does not report a domain nothing can reach", async () => {
+    const { registeredScripts, stored } = installChrome({
+      domains: ["https://app.example"],
+      grantedOrigins: [],
+      storageDelay: async () => {},
+    });
+
+    await import("../background");
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(stored.domains).toEqual([]);
+    expect(registeredScripts).toEqual([]);
+  });
+
+  it("is kept, and its content scripts registered, while the permission holds", async () => {
+    const { registeredScripts, stored } = installChrome({
+      domains: ["https://app.example"],
+      storageDelay: async () => {},
+    });
+
+    await import("../background");
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(stored.domains).toEqual(["https://app.example"]);
+    expect(registeredScripts).toEqual([
+      "https://app.example/*",
+      "https://app.example/*",
+    ]);
+  });
+});
+
+
+describe("an in-app route change", () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  async function loadWithTools() {
+    const ctx = installChrome({
+      domains: ["https://app.example"],
+      storageDelay: async () => {},
+    });
+    await import("../background");
+    await send(ctx.messageListeners, { type: "TOOLS_UPDATED", tools: TOOLS }, SENDER);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(await statusToolNames(ctx.messageListeners, 7)).toEqual(["reflow_run"]);
+    return ctx;
+  }
+
+  it("keeps the tools when only the fragment changes", async () => {
+    const ctx = await loadWithTools();
+
+    for (const l of ctx.updatedListeners) {
+      l(7, { status: "loading", url: "https://app.example/flow#/regions?search=" });
+    }
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(await statusToolNames(ctx.messageListeners, 7)).toEqual(["reflow_run"]);
+  });
+
+  it("drops them when the document itself changes", async () => {
+    const ctx = await loadWithTools();
+
+    for (const l of ctx.updatedListeners) {
+      l(7, { status: "loading", url: "https://app.example/other" });
+    }
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(await statusToolNames(ctx.messageListeners, 7)).toEqual([]);
+  });
+});

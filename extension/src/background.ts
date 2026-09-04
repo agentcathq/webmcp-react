@@ -159,14 +159,38 @@ async function persistDomains() {
 // Resolves once the persisted activations are in memory. A service worker
 // restart re-runs this file, and a content script can report its tools before
 // storage has been read, so handlers that decide on activation wait for this.
+async function hasHostPermission(origin: string): Promise<boolean> {
+  try {
+    return await chrome.permissions.contains({ origins: [`${origin}/*`] });
+  } catch {
+    return false;
+  }
+}
+
 async function loadPersistedDomains() {
   const data = await chrome.storage.local.get(STORAGE_KEY);
-  const domains: string[] = data[STORAGE_KEY] ?? [];
-  for (const d of domains) {
+  const stored: string[] = data[STORAGE_KEY] ?? [];
+
+  // Host permissions are optional and are not guaranteed to outlive the
+  // activation stored here: reinstalling the extension keeps its storage and
+  // drops its granted origins. Content scripts cannot be registered for an
+  // origin we no longer hold, so keeping it would leave the popup reporting a
+  // domain as active while nothing on it can be reached.
+  const granted: string[] = [];
+  for (const origin of stored) {
+    if (await hasHostPermission(origin)) granted.push(origin);
+  }
+
+  for (const d of granted) {
     activatedDomains.add(d);
   }
-  if (domains.length > 0) {
-    await registerContentScriptsForDomains(domains);
+
+  if (granted.length !== stored.length) {
+    await persistDomains();
+  }
+
+  if (granted.length > 0) {
+    await registerContentScriptsForDomains(granted);
   }
 }
 
