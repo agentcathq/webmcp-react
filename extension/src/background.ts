@@ -68,6 +68,19 @@ function originHash(origin: string): string {
   return Math.abs(hash).toString(36);
 }
 
+/** Whether two urls address the same document, i.e. differ only by fragment. */
+function isSameDocument(a: string, b: string): boolean {
+  try {
+    const ua = new URL(a);
+    const ub = new URL(b);
+    ua.hash = "";
+    ub.hash = "";
+    return ua.href === ub.href;
+  } catch {
+    return false;
+  }
+}
+
 function buildAggregatedTools(): WsToolsListResponse["tools"] {
   const tools: WsToolsListResponse["tools"] = [];
   for (const [tabId, info] of tabTools) {
@@ -143,6 +156,9 @@ async function persistDomains() {
   });
 }
 
+// Resolves once the persisted activations are in memory. A service worker
+// restart re-runs this file, and a content script can report its tools before
+// storage has been read, so handlers that decide on activation wait for this.
 async function loadPersistedDomains() {
   const data = await chrome.storage.local.get(STORAGE_KEY);
   const domains: string[] = data[STORAGE_KEY] ?? [];
@@ -544,14 +560,23 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 
 // Clean up when tabs navigate
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
-  if (changeInfo.status === "loading") {
-    // Session-only activation doesn't survive navigation
-    activatedTabs.delete(tabId);
-    if (tabTools.has(tabId)) {
-      tabTools.delete(tabId);
-      rejectPendingCallsForTab(tabId);
-      notifyToolsChanged();
-    }
+  if (changeInfo.status !== "loading") return;
+
+  // A fragment change is a same-document navigation, which routers use for
+  // every in-app route: the document keeps the tools it registered and content
+  // scripts do not run again, so there would be nothing left to report them.
+  const known = tabTools.get(tabId);
+  if (known && changeInfo.url && isSameDocument(known.url, changeInfo.url)) {
+    if (DEBUG) console.log("[WebMCP Bridge] same-document navigation, keeping tools", changeInfo.url);
+    return;
+  }
+
+  // Session-only activation doesn't survive navigation
+  activatedTabs.delete(tabId);
+  if (tabTools.has(tabId)) {
+    tabTools.delete(tabId);
+    rejectPendingCallsForTab(tabId);
+    notifyToolsChanged();
   }
 });
 
