@@ -32,8 +32,11 @@ function installChrome(opts: {
     storage: {
       local: {
         get: async () => {
+          // Snapshot at request time: the real store answers a get issued
+          // before a set with the old value.
+          const domains = stored.domains;
           await opts.storageDelay();
-          return { activatedDomains: stored.domains };
+          return { activatedDomains: domains };
         },
         set: async (items: any) => {
           stored.domains = items.activatedDomains;
@@ -216,5 +219,83 @@ describe("an in-app route change", () => {
     await new Promise((r) => setTimeout(r, 0));
 
     expect(await statusToolNames(ctx.messageListeners, 7)).toEqual([]);
+  });
+});
+
+
+describe("handlers that arrive before the persisted activations load", () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  function installWithDelayedStorage(domains: string[]) {
+    let releaseStorage: () => void = () => {};
+    const storageRead = new Promise<void>((r) => {
+      releaseStorage = r;
+    });
+    const ctx = installChrome({ domains, storageDelay: () => storageRead });
+    return { ...ctx, releaseStorage };
+  }
+
+  it("GET_STATUS reports the persisted activation instead of a premature off", async () => {
+    const { messageListeners, releaseStorage } = installWithDelayedStorage(["https://app.example"]);
+    await import("../background");
+
+    const pending = send(messageListeners, { type: "GET_STATUS", tabId: 7 });
+    releaseStorage();
+    const status = await pending;
+
+    expect(status?.currentTabActivation).toBe("domain");
+  });
+
+  it("DEACTIVATE_DOMAIN is not undone by the activation loading behind it", async () => {
+    const { messageListeners, stored, releaseStorage } = installWithDelayedStorage([
+      "https://app.example",
+    ]);
+    await import("../background");
+
+    const pending = send(messageListeners, {
+      type: "DEACTIVATE_DOMAIN",
+      origin: "https://app.example",
+    });
+    releaseStorage();
+    await pending;
+
+    const status = await send(messageListeners, { type: "GET_STATUS", tabId: 7 });
+    expect(status?.activatedDomains).toEqual([]);
+    expect(stored.domains).toEqual([]);
+  });
+
+  it("ACTIVATE_DOMAIN does not overwrite the activations still loading", async () => {
+    const { messageListeners, stored, releaseStorage } = installWithDelayedStorage([
+      "https://a.example",
+    ]);
+    await import("../background");
+
+    const pending = send(messageListeners, {
+      type: "ACTIVATE_DOMAIN",
+      tabId: 7,
+      origin: "https://b.example",
+    });
+    releaseStorage();
+    await pending;
+
+    expect(stored.domains).toEqual(["https://a.example", "https://b.example"]);
+  });
+
+  it("a tab activation still reports its tools when the storage read fails", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { messageListeners } = installChrome({
+      domains: [],
+      storageDelay: () => Promise.reject(new Error("storage unavailable")),
+    });
+    await import("../background");
+
+    await send(messageListeners, { type: "ACTIVATE_TAB", tabId: 7 });
+    await send(messageListeners, { type: "TOOLS_UPDATED", tools: TOOLS }, SENDER);
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(await statusToolNames(messageListeners, 7)).toEqual(["reflow_run"]);
+    errorSpy.mockRestore();
   });
 });

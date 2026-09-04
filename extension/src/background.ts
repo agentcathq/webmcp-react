@@ -156,9 +156,6 @@ async function persistDomains() {
   });
 }
 
-// Resolves once the persisted activations are in memory. A service worker
-// restart re-runs this file, and a content script can report its tools before
-// storage has been read, so handlers that decide on activation wait for this.
 async function hasHostPermission(origin: string): Promise<boolean> {
   try {
     return await chrome.permissions.contains({ origins: [`${origin}/*`] });
@@ -197,7 +194,9 @@ async function loadPersistedDomains() {
 // Resolves once the persisted activations are in memory. A service worker
 // restart re-runs this file, and a content script can report its tools before
 // storage has been read, so handlers that decide on activation wait for this.
-const domainsReady: Promise<void> = loadPersistedDomains();
+const domainsReady: Promise<void> = loadPersistedDomains().catch((err) => {
+  console.error("[WebMCP Bridge] loadPersistedDomains:", err);
+});
 
 async function registerContentScriptsForDomains(origins: string[]) {
   const scripts: chrome.scripting.RegisteredContentScript[] = [];
@@ -498,22 +497,25 @@ chrome.runtime.onMessage.addListener(
       }
       case "ACTIVATE_DOMAIN": {
         const { tabId, origin } = message;
-        activatedDomains.add(origin);
-      
-        Promise.all([
-          persistDomains(),
-          registerContentScriptsForDomains([origin]),
-          // Also inject into current tab immediately
-          activatedTabs.has(tabId)
-            ? Promise.resolve()
-            : injectContentScripts(tabId),
-        ]).then(
-          () => {
-            activatedTabs.add(tabId);
-            sendResponse({ ok: true });
-          },
-          (err) => sendResponse({ ok: false, error: String(err) }),
-        );
+        // Wait for the persisted activations so persistDomains writes the
+        // full set rather than just this origin.
+        domainsReady
+          .then(() => {
+            activatedDomains.add(origin);
+            return Promise.all([
+              persistDomains(),
+              registerContentScriptsForDomains([origin]),
+              // Also inject into current tab immediately
+              activatedTabs.has(tabId) ? Promise.resolve() : injectContentScripts(tabId),
+            ]);
+          })
+          .then(
+            () => {
+              activatedTabs.add(tabId);
+              sendResponse({ ok: true });
+            },
+            (err) => sendResponse({ ok: false, error: String(err) }),
+          );
         return true;
       }
       case "DEACTIVATE_TAB": {
@@ -530,30 +532,36 @@ chrome.runtime.onMessage.addListener(
       }
       case "DEACTIVATE_DOMAIN": {
         const { origin } = message;
-        activatedDomains.delete(origin);
-      
+        // Wait for the persisted activations, or the loader adds this origin
+        // straight back after it was removed here.
+        domainsReady
+          .then(() => {
+            activatedDomains.delete(origin);
 
-        // Purge tools from tabs on this origin — but only if not still authorized via activatedTabs
-        for (const [tabId, info] of tabTools) {
-          if (originFromUrl(info.url) === origin && !activatedTabs.has(tabId)) {
-            purgeTabTools(tabId);
-          }
-        }
+            // Purge tools from tabs on this origin — but only if not still authorized via activatedTabs
+            for (const [tabId, info] of tabTools) {
+              if (originFromUrl(info.url) === origin && !activatedTabs.has(tabId)) {
+                purgeTabTools(tabId);
+              }
+            }
 
-        Promise.all([
-          persistDomains(),
-          unregisterContentScriptsForDomain(origin),
-          chrome.permissions.remove({ origins: [`${origin}/*`] }),
-        ]).then(
-          () => sendResponse({ ok: true }),
-          (err) => sendResponse({ ok: false, error: String(err) }),
-        );
+            return Promise.all([
+              persistDomains(),
+              unregisterContentScriptsForDomain(origin),
+              chrome.permissions.remove({ origins: [`${origin}/*`] }),
+            ]);
+          })
+          .then(
+            () => sendResponse({ ok: true }),
+            (err) => sendResponse({ ok: false, error: String(err) }),
+          );
         return true;
       }
       case "GET_STATUS": {
         const queryTabId = message.tabId;
         // Look up the tab URL for activation status
         const getActivation = async (): Promise<"off" | "tab" | "domain"> => {
+          await domainsReady;
           if (queryTabId == null) return "off";
           try {
             const tab = await chrome.tabs.get(queryTabId);
