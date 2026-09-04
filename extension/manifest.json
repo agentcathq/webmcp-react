@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "WebMCP Bridge",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Expose your web app's tools to AI assistants like Claude and Cursor via the Model Context Protocol",
   "permissions": ["tabs", "scripting", "activeTab", "storage"],
   "optional_host_permissions": ["https://*/*", "http://*/*"],
