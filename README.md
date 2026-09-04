@@ -25,7 +25,12 @@ npm install webmcp-react zod
 
 Try it live: [**WebMCP Wordle Demo**](https://agentcathq.github.io/webmcp-react/playground/)
 
-A fully playable Wordle clone that showcases `webmcp-react` hooks. Tools dynamically register and unregister as the game moves through phases (idle, playing, won/lost), and guesses can be made via keyboard or through a connected MCP agent. Includes a DevPanel for inspecting tool state and an easy-mode toggle that enables a hint tool. Install the Chrome extension to bridge tools to AI clients like Claude and Cursor.
+A fully playable Wordle clone that showcases `webmcp-react` hooks. Tools dynamically register and unregister as the game moves through phases (idle, playing, won/lost), and guesses can be made via keyboard or through an AI agent. Includes a DevPanel for inspecting tool state and an easy-mode toggle that enables a hint tool.
+
+To play with an AI agent:
+
+- **Codex** — Open the demo in Codex and ask it to play. Codex discovers and calls the page's WebMCP tools directly.
+- **Claude, Cursor, and other MCP clients** — Install the [WebMCP Bridge extension](https://chromewebstore.google.com/detail/webmcp-bridge/chgjbookknohehmaocfijekhaocaanaf), open the demo in Chrome, and activate the extension for the page.
 
 ## Quick start
 
@@ -78,7 +83,7 @@ This library provides React bindings for that API. `<WebMCPProvider>` installs a
 
 ## Connect to AI clients
 
-Desktop MCP clients like Claude Code and Cursor can't access `document.modelContext` directly. The [WebMCP Bridge extension](https://chromewebstore.google.com/detail/webmcp-bridge/chgjbookknohehmaocfijekhaocaanaf) connects your registered tools to any MCP client.
+Agents with built-in WebMCP browser support, like Codex, can discover and call tools directly from the page. For clients that can't access `document.modelContext` directly, the [WebMCP Bridge extension](https://chromewebstore.google.com/detail/webmcp-bridge/chgjbookknohehmaocfijekhaocaanaf) connects your registered tools to any MCP client.
 
 1. Install the extension from the [Chrome Web Store](https://chromewebstore.google.com/detail/webmcp-bridge/chgjbookknohehmaocfijekhaocaanaf)
 2. Configure your MCP client — see the [extension setup guide](./extension/README.md) for details
