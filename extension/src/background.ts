@@ -16,6 +16,11 @@ const tabTools = new Map<
   { tools: BrowserTool[]; title: string; url: string }
 >();
 
+// The last url seen for each tab, kept in full. tabTools only holds a
+// 500-char copy for display, and only once the page has reported, but the
+// navigation listener needs a url to compare against in both cases.
+const tabUrls = new Map<number, string>();
+
 const pendingCalls = new Map<string, number>();
 
 // Activation state
@@ -66,6 +71,19 @@ function originHash(origin: string): string {
     hash = ((hash << 5) - hash + origin.charCodeAt(i)) | 0;
   }
   return Math.abs(hash).toString(36);
+}
+
+/** Whether two urls address the same document, i.e. differ only by fragment. */
+function isSameDocument(a: string, b: string): boolean {
+  try {
+    const ua = new URL(a);
+    const ub = new URL(b);
+    ua.hash = "";
+    ub.hash = "";
+    return ua.href === ub.href;
+  } catch {
+    return false;
+  }
 }
 
 function buildAggregatedTools(): WsToolsListResponse["tools"] {
@@ -143,16 +161,47 @@ async function persistDomains() {
   });
 }
 
-async function loadPersistedDomains() {
-  const data = await chrome.storage.local.get(STORAGE_KEY);
-  const domains: string[] = data[STORAGE_KEY] ?? [];
-  for (const d of domains) {
-    activatedDomains.add(d);
-  }
-  if (domains.length > 0) {
-    await registerContentScriptsForDomains(domains);
+async function hasHostPermission(origin: string): Promise<boolean> {
+  try {
+    return await chrome.permissions.contains({ origins: [`${origin}/*`] });
+  } catch {
+    return false;
   }
 }
+
+async function loadPersistedDomains() {
+  const data = await chrome.storage.local.get(STORAGE_KEY);
+  const stored: string[] = data[STORAGE_KEY] ?? [];
+
+  // Host permissions are optional and are not guaranteed to outlive the
+  // activation stored here: reinstalling the extension keeps its storage and
+  // drops its granted origins. Content scripts cannot be registered for an
+  // origin we no longer hold, so keeping it would leave the popup reporting a
+  // domain as active while nothing on it can be reached.
+  const granted: string[] = [];
+  for (const origin of stored) {
+    if (await hasHostPermission(origin)) granted.push(origin);
+  }
+
+  for (const d of granted) {
+    activatedDomains.add(d);
+  }
+
+  if (granted.length !== stored.length) {
+    await persistDomains();
+  }
+
+  if (granted.length > 0) {
+    await registerContentScriptsForDomains(granted);
+  }
+}
+
+// Resolves once the persisted activations are in memory. A service worker
+// restart re-runs this file, and a content script can report its tools before
+// storage has been read, so handlers that decide on activation wait for this.
+const domainsReady: Promise<void> = loadPersistedDomains().catch((err) => {
+  console.error("[WebMCP Bridge] loadPersistedDomains:", err);
+});
 
 async function registerContentScriptsForDomains(origins: string[]) {
   const scripts: chrome.scripting.RegisteredContentScript[] = [];
@@ -205,6 +254,19 @@ async function injectContentScripts(tabId: number) {
     files: ["content-main.js"],
     world: "MAIN" as chrome.scripting.ExecutionWorld,
   });
+}
+
+function rememberTabUrl(tabId: number, url: string | undefined) {
+  if (url) tabUrls.set(tabId, url);
+}
+
+// The popup only sends a tab id, so look the url up for activations that
+// happen before the page has reported anything.
+function rememberTabUrlFromChrome(tabId: number) {
+  chrome.tabs.get(tabId).then(
+    (tab) => rememberTabUrl(tabId, tab.url),
+    () => {},
+  );
 }
 
 function purgeTabTools(tabId: number) {
@@ -396,17 +458,27 @@ chrome.runtime.onMessage.addListener(
       case "TOOLS_UPDATED": {
         const tabId = sender.tab?.id;
         if (tabId == null) break;
-        if (!isTabAuthorized(tabId, sender.tab?.url)) {
-          // Stale content script from a deactivated tab — purge and ignore
-          purgeTabTools(tabId);
-          break;
-        }
-        tabTools.set(tabId, {
-          tools: message.tools,
-          title: sanitize(sender.tab?.title ?? "", 500),
-          url: sanitize(sender.tab?.url ?? "", 500),
+        const { tools } = message;
+        const url = sender.tab?.url;
+        const title = sender.tab?.title;
+        // An activated domain reads as unauthorized until storage has been
+        // read, and this branch purges rather than defers, so a page that
+        // registers during that window loses its tools until it registers
+        // again. Decide once the activations are in memory.
+        void domainsReady.then(() => {
+          rememberTabUrl(tabId, url);
+          if (!isTabAuthorized(tabId, url)) {
+            // Stale content script from a deactivated tab — purge and ignore
+            purgeTabTools(tabId);
+            return;
+          }
+          tabTools.set(tabId, {
+            tools,
+            title: sanitize(title ?? "", 500),
+            url: sanitize(url ?? "", 500),
+          });
+          notifyToolsChanged();
         });
-        notifyToolsChanged();
         break;
       }
       case "TOOL_RESULT": {
@@ -435,7 +507,8 @@ chrome.runtime.onMessage.addListener(
           return true;
         }
         activatedTabs.add(tabId);
-      
+        rememberTabUrlFromChrome(tabId);
+
         injectContentScripts(tabId).then(
           () => sendResponse({ ok: true }),
           (err) => sendResponse({ ok: false, error: String(err) }),
@@ -444,22 +517,26 @@ chrome.runtime.onMessage.addListener(
       }
       case "ACTIVATE_DOMAIN": {
         const { tabId, origin } = message;
-        activatedDomains.add(origin);
-      
-        Promise.all([
-          persistDomains(),
-          registerContentScriptsForDomains([origin]),
-          // Also inject into current tab immediately
-          activatedTabs.has(tabId)
-            ? Promise.resolve()
-            : injectContentScripts(tabId),
-        ]).then(
-          () => {
-            activatedTabs.add(tabId);
-            sendResponse({ ok: true });
-          },
-          (err) => sendResponse({ ok: false, error: String(err) }),
-        );
+        rememberTabUrlFromChrome(tabId);
+        // Wait for the persisted activations so persistDomains writes the
+        // full set rather than just this origin.
+        domainsReady
+          .then(() => {
+            activatedDomains.add(origin);
+            return Promise.all([
+              persistDomains(),
+              registerContentScriptsForDomains([origin]),
+              // Also inject into current tab immediately
+              activatedTabs.has(tabId) ? Promise.resolve() : injectContentScripts(tabId),
+            ]);
+          })
+          .then(
+            () => {
+              activatedTabs.add(tabId);
+              sendResponse({ ok: true });
+            },
+            (err) => sendResponse({ ok: false, error: String(err) }),
+          );
         return true;
       }
       case "DEACTIVATE_TAB": {
@@ -476,30 +553,36 @@ chrome.runtime.onMessage.addListener(
       }
       case "DEACTIVATE_DOMAIN": {
         const { origin } = message;
-        activatedDomains.delete(origin);
-      
+        // Wait for the persisted activations, or the loader adds this origin
+        // straight back after it was removed here.
+        domainsReady
+          .then(() => {
+            activatedDomains.delete(origin);
 
-        // Purge tools from tabs on this origin — but only if not still authorized via activatedTabs
-        for (const [tabId, info] of tabTools) {
-          if (originFromUrl(info.url) === origin && !activatedTabs.has(tabId)) {
-            purgeTabTools(tabId);
-          }
-        }
+            // Purge tools from tabs on this origin — but only if not still authorized via activatedTabs
+            for (const [tabId, info] of tabTools) {
+              if (originFromUrl(info.url) === origin && !activatedTabs.has(tabId)) {
+                purgeTabTools(tabId);
+              }
+            }
 
-        Promise.all([
-          persistDomains(),
-          unregisterContentScriptsForDomain(origin),
-          chrome.permissions.remove({ origins: [`${origin}/*`] }),
-        ]).then(
-          () => sendResponse({ ok: true }),
-          (err) => sendResponse({ ok: false, error: String(err) }),
-        );
+            return Promise.all([
+              persistDomains(),
+              unregisterContentScriptsForDomain(origin),
+              chrome.permissions.remove({ origins: [`${origin}/*`] }),
+            ]);
+          })
+          .then(
+            () => sendResponse({ ok: true }),
+            (err) => sendResponse({ ok: false, error: String(err) }),
+          );
         return true;
       }
       case "GET_STATUS": {
         const queryTabId = message.tabId;
         // Look up the tab URL for activation status
         const getActivation = async (): Promise<"off" | "tab" | "domain"> => {
+          await domainsReady;
           if (queryTabId == null) return "off";
           try {
             const tab = await chrome.tabs.get(queryTabId);
@@ -535,6 +618,7 @@ chrome.runtime.onMessage.addListener(
 // Clean up when tabs close
 chrome.tabs.onRemoved.addListener((tabId) => {
   activatedTabs.delete(tabId);
+  tabUrls.delete(tabId);
   if (tabTools.has(tabId)) {
     tabTools.delete(tabId);
     rejectPendingCallsForTab(tabId);
@@ -544,17 +628,28 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 
 // Clean up when tabs navigate
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
-  if (changeInfo.status === "loading") {
-    // Session-only activation doesn't survive navigation
-    activatedTabs.delete(tabId);
-    if (tabTools.has(tabId)) {
-      tabTools.delete(tabId);
-      rejectPendingCallsForTab(tabId);
-      notifyToolsChanged();
-    }
+  const last = tabUrls.get(tabId);
+  rememberTabUrl(tabId, changeInfo.url);
+  if (changeInfo.status !== "loading") return;
+
+  // A fragment change is a same-document navigation, which routers use for
+  // every in-app route: the document keeps the tools it registered and content
+  // scripts do not run again, so there would be nothing left to report them.
+  if (last && changeInfo.url && isSameDocument(last, changeInfo.url)) {
+    const known = tabTools.get(tabId);
+    if (known) known.url = sanitize(changeInfo.url, 500);
+    if (DEBUG) console.log("[WebMCP Bridge] same-document navigation, keeping tools", changeInfo.url);
+    return;
+  }
+
+  // Session-only activation doesn't survive navigation
+  activatedTabs.delete(tabId);
+  if (tabTools.has(tabId)) {
+    tabTools.delete(tabId);
+    rejectPendingCallsForTab(tabId);
+    notifyToolsChanged();
   }
 });
 
-// Load persisted domains and start WebSocket
-loadPersistedDomains();
+// Start the WebSocket; the persisted activations are already loading
 connectWebSocket();
