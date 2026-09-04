@@ -16,6 +16,11 @@ const tabTools = new Map<
   { tools: BrowserTool[]; title: string; url: string }
 >();
 
+// The last url seen for each tab, kept in full. tabTools only holds a
+// 500-char copy for display, and only once the page has reported, but the
+// navigation listener needs a url to compare against in both cases.
+const tabUrls = new Map<number, string>();
+
 const pendingCalls = new Map<string, number>();
 
 // Activation state
@@ -251,6 +256,19 @@ async function injectContentScripts(tabId: number) {
   });
 }
 
+function rememberTabUrl(tabId: number, url: string | undefined) {
+  if (url) tabUrls.set(tabId, url);
+}
+
+// The popup only sends a tab id, so look the url up for activations that
+// happen before the page has reported anything.
+function rememberTabUrlFromChrome(tabId: number) {
+  chrome.tabs.get(tabId).then(
+    (tab) => rememberTabUrl(tabId, tab.url),
+    () => {},
+  );
+}
+
 function purgeTabTools(tabId: number) {
   if (tabTools.has(tabId)) {
     tabTools.delete(tabId);
@@ -448,6 +466,7 @@ chrome.runtime.onMessage.addListener(
         // registers during that window loses its tools until it registers
         // again. Decide once the activations are in memory.
         void domainsReady.then(() => {
+          rememberTabUrl(tabId, url);
           if (!isTabAuthorized(tabId, url)) {
             // Stale content script from a deactivated tab — purge and ignore
             purgeTabTools(tabId);
@@ -488,7 +507,8 @@ chrome.runtime.onMessage.addListener(
           return true;
         }
         activatedTabs.add(tabId);
-      
+        rememberTabUrlFromChrome(tabId);
+
         injectContentScripts(tabId).then(
           () => sendResponse({ ok: true }),
           (err) => sendResponse({ ok: false, error: String(err) }),
@@ -497,6 +517,7 @@ chrome.runtime.onMessage.addListener(
       }
       case "ACTIVATE_DOMAIN": {
         const { tabId, origin } = message;
+        rememberTabUrlFromChrome(tabId);
         // Wait for the persisted activations so persistDomains writes the
         // full set rather than just this origin.
         domainsReady
@@ -597,6 +618,7 @@ chrome.runtime.onMessage.addListener(
 // Clean up when tabs close
 chrome.tabs.onRemoved.addListener((tabId) => {
   activatedTabs.delete(tabId);
+  tabUrls.delete(tabId);
   if (tabTools.has(tabId)) {
     tabTools.delete(tabId);
     rejectPendingCallsForTab(tabId);
@@ -606,13 +628,16 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 
 // Clean up when tabs navigate
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+  const last = tabUrls.get(tabId);
+  rememberTabUrl(tabId, changeInfo.url);
   if (changeInfo.status !== "loading") return;
 
   // A fragment change is a same-document navigation, which routers use for
   // every in-app route: the document keeps the tools it registered and content
   // scripts do not run again, so there would be nothing left to report them.
-  const known = tabTools.get(tabId);
-  if (known && changeInfo.url && isSameDocument(known.url, changeInfo.url)) {
+  if (last && changeInfo.url && isSameDocument(last, changeInfo.url)) {
+    const known = tabTools.get(tabId);
+    if (known) known.url = sanitize(changeInfo.url, 500);
     if (DEBUG) console.log("[WebMCP Bridge] same-document navigation, keeping tools", changeInfo.url);
     return;
   }

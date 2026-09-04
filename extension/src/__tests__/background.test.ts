@@ -299,3 +299,58 @@ describe("handlers that arrive before the persisted activations load", () => {
     errorSpy.mockRestore();
   });
 });
+
+describe("the url a same-document check compares against", () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  it("is known for a tab activation before the page has reported", async () => {
+    const ctx = installChrome({ domains: [], storageDelay: async () => {} });
+    await import("../background");
+    await send(ctx.messageListeners, { type: "ACTIVATE_TAB", tabId: 7 });
+    await new Promise((r) => setTimeout(r, 0));
+
+    for (const l of ctx.updatedListeners) {
+      l(7, { status: "loading", url: "https://app.example/flow#/settings" });
+    }
+    await send(ctx.messageListeners, { type: "TOOLS_UPDATED", tools: TOOLS }, SENDER);
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(await statusToolNames(ctx.messageListeners, 7)).toEqual(["reflow_run"]);
+  });
+
+  it("is the full url, not the 500-char copy kept for display", async () => {
+    const longUrl = `https://app.example/flow?q=${"x".repeat(600)}`;
+    const ctx = installChrome({ domains: ["https://app.example"], storageDelay: async () => {} });
+    await import("../background");
+    await send(
+      ctx.messageListeners,
+      { type: "TOOLS_UPDATED", tools: TOOLS },
+      { tab: { id: 7, url: longUrl, title: "Flow" } },
+    );
+    await new Promise((r) => setTimeout(r, 0));
+
+    for (const l of ctx.updatedListeners) {
+      l(7, { status: "loading", url: `${longUrl}#/b` });
+    }
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(await statusToolNames(ctx.messageListeners, 7)).toEqual(["reflow_run"]);
+  });
+
+  it("follows a kept navigation, and so does the url shown for the tab", async () => {
+    const ctx = installChrome({ domains: ["https://app.example"], storageDelay: async () => {} });
+    await import("../background");
+    await send(ctx.messageListeners, { type: "TOOLS_UPDATED", tools: TOOLS }, SENDER);
+    await new Promise((r) => setTimeout(r, 0));
+
+    for (const l of ctx.updatedListeners) {
+      l(7, { status: "loading", url: "https://app.example/flow#/b" });
+    }
+    await new Promise((r) => setTimeout(r, 0));
+
+    const status = await send(ctx.messageListeners, { type: "GET_STATUS", tabId: 7 });
+    expect(status?.tabs?.[0]?.url).toBe("https://app.example/flow#/b");
+  });
+});
