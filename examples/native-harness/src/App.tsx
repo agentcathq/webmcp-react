@@ -56,6 +56,23 @@ function errName(err: unknown): string {
     : String(err);
 }
 
+async function waitForStart(started: Promise<void>, pending: Promise<unknown>) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      started,
+      pending.then(() => {
+        throw new Error("Probe settled before its handler started");
+      }),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("Probe handler did not start")), 1000);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function runSelfTest(log: (line: string) => void) {
   // Report which implementation backs document.modelContext.
   const mc = document.modelContext;
@@ -68,15 +85,113 @@ async function runSelfTest(log: (line: string) => void) {
 
   // Consumer API (document.modelContext) — native Chrome or the 1.1.0+ polyfill.
   if (!mc.getTools || !mc.executeTool) {
-    log("FAIL: document.modelContext.getTools/executeTool missing (Chrome <=149 or webmcp-react <=1.0.0)");
+    log(
+      "FAIL: document.modelContext.getTools/executeTool missing (Chrome <=149 or webmcp-react <=1.0.0)",
+    );
     return;
   }
+  const executeTool = mc.executeTool.bind(mc);
+  let legacyNative = false;
+  {
+    const reg = new AbortController();
+    let received: unknown;
+    let calls = 0;
+    try {
+      await mc.registerTool(
+        {
+          name: "input_probe",
+          description: "Probe consumer input serialization.",
+          execute: (input) => {
+            received = input;
+            calls++;
+            return { content: [{ type: "text", text: "ok" }] };
+          },
+        },
+        { signal: reg.signal },
+      );
+      const probe = (await mc.getTools()).find((tool) => tool.name === "input_probe");
+      if (!probe) throw new Error("input_probe not listed");
+      try {
+        await executeTool(probe, {});
+      } catch (err) {
+        if (
+          !isPolyfill &&
+          errName(err) === "UnknownError" &&
+          typeof err === "object" &&
+          err !== null &&
+          "message" in err &&
+          typeof err.message === "string" &&
+          err.message.startsWith("Failed to parse input") &&
+          calls === 0
+        ) {
+          await executeTool(probe, "{}");
+          legacyNative = true;
+          log("INFO: legacy native requires JSON strings");
+        } else {
+          throw err;
+        }
+      }
+      if (legacyNative) {
+        log("INFO: modern input probes skipped on legacy native");
+      } else {
+        const transformed = { nested: { text: "serialized" } };
+        await executeTool(probe, { toJSON: () => transformed });
+        log(
+          received !== transformed &&
+            (received as typeof transformed).nested !== transformed.nested &&
+            JSON.stringify(received) === JSON.stringify(transformed)
+            ? "PASS: object input serialized and cloned"
+            : "FAIL: object input serialization or cloning",
+        );
+
+        const circular: Record<string, unknown> = {};
+        circular.self = circular;
+        const invalid: [string, () => Promise<unknown>][] = [
+          ["omitted", () => executeTool(probe)],
+          ["undefined", () => executeTool(probe, undefined)],
+          ["null", () => executeTool(probe, null as unknown as object)],
+          ["circular", () => executeTool(probe, circular)],
+          ["BigInt", () => executeTool(probe, { value: BigInt(1) })],
+          ["toJSON undefined", () => executeTool(probe, { toJSON: () => undefined })],
+        ];
+        for (const [label, run] of invalid) {
+          const before = calls;
+          try {
+            await run();
+            log(`FAIL: ${label} input resolved`);
+          } catch (err) {
+            log(
+              errName(err) === "TypeError" && calls === before
+                ? `PASS: ${label} input rejects TypeError before handler`
+                : `FAIL: ${label} input (${errName(err)}, handler calls: ${calls - before})`,
+            );
+          }
+        }
+      }
+      const before = calls;
+      try {
+        await executeTool(probe, "{}");
+        log(
+          (isPolyfill || legacyNative) && calls === before + 1
+            ? "PASS: legacy JSON string accepted"
+            : "FAIL: legacy JSON string unexpectedly accepted",
+        );
+      } catch (err) {
+        log(
+          !isPolyfill && !legacyNative && errName(err) === "TypeError" && calls === before
+            ? "PASS: legacy JSON string rejects TypeError"
+            : `FAIL: legacy JSON string (${errName(err)})`,
+        );
+      }
+    } finally {
+      reg.abort();
+    }
+  }
+  const inputFor = (input: object) => (legacyNative ? JSON.stringify(input) : input);
   const tools = await mc.getTools();
   const names = tools.map((x) => x.name);
   log(
-    names.includes("echo") && names.includes("add")
-      ? "PASS: getTools"
-      : `FAIL: getTools ${names}`,
+    names.includes("echo") && names.includes("add") ? "PASS: getTools" : `FAIL: getTools ${names}`,
   );
 
   // Chrome <=153 returns inputSchema as a JSON string; 154+/polyfill as an object.
@@ -91,14 +206,14 @@ async function runSelfTest(log: (line: string) => void) {
       : `FAIL: inputSchema ${JSON.stringify(echoTool?.inputSchema)}`,
   );
 
-  const echoRaw = echoTool ? await mc.executeTool(echoTool, JSON.stringify({ text: "hi" })) : null;
+  const echoRaw = echoTool ? await executeTool(echoTool, inputFor({ text: "hi" })) : null;
   const echo = echoRaw ? JSON.parse(echoRaw) : null;
   log(
     echo?.content?.[0]?.text?.includes("hi") ? "PASS: executeTool echo" : `FAIL: echo ${echoRaw}`,
   );
 
   const addTool = tools.find((x) => x.name === "add");
-  const addRaw = addTool ? await mc.executeTool(addTool, JSON.stringify({ a: 2, b: 3 })) : null;
+  const addRaw = addTool ? await executeTool(addTool, inputFor({ a: 2, b: 3 })) : null;
   const add = addRaw ? JSON.parse(addRaw) : null;
   log(add?.content?.[0]?.text?.includes("5") ? "PASS: executeTool add" : `FAIL: add ${addRaw}`);
 
@@ -106,29 +221,32 @@ async function runSelfTest(log: (line: string) => void) {
   {
     const reg = new AbortController();
     let sawSignal: unknown = "not-called";
-    await mc.registerTool(
-      {
-        name: "signal_probe",
-        description: "Probe execute options.signal.",
-        execute: (_input: Record<string, unknown>, options?: { signal?: AbortSignal }) => {
-          sawSignal = options?.signal;
-          return { content: [{ type: "text", text: "ok" }] };
+    try {
+      await mc.registerTool(
+        {
+          name: "signal_probe",
+          description: "Probe execute options.signal.",
+          execute: (_input: Record<string, unknown>, options?: { signal?: AbortSignal }) => {
+            sawSignal = options?.signal;
+            return { content: [{ type: "text", text: "ok" }] };
+          },
         },
-      },
-      { signal: reg.signal },
-    );
-    const probeTool = (await mc.getTools()).find((x) => x.name === "signal_probe");
-    if (!probeTool) {
-      log("FAIL: signal_probe not listed");
-    } else {
-      await mc.executeTool(probeTool, "{}");
-      log(
-        sawSignal instanceof AbortSignal
-          ? "PASS: execute received options.signal"
-          : "INFO: no options.signal (Chrome <=152)",
+        { signal: reg.signal },
       );
+      const probeTool = (await mc.getTools()).find((x) => x.name === "signal_probe");
+      if (!probeTool) {
+        log("FAIL: signal_probe not listed");
+      } else {
+        await executeTool(probeTool, inputFor({}));
+        log(
+          sawSignal instanceof AbortSignal
+            ? "PASS: execute received options.signal"
+            : "INFO: no options.signal (Chrome <=152)",
+        );
+      }
+    } finally {
+      reg.abort();
     }
-    reg.abort();
   }
 
   // Probe: caller abort → tool signal aborts (generic AbortError), caller rejects.
@@ -137,86 +255,113 @@ async function runSelfTest(log: (line: string) => void) {
   // self-test forever.
   {
     const reg = new AbortController();
+    const controller = new AbortController();
     let toolAborted: string | null = null;
-    await mc.registerTool(
-      {
-        name: "abort_flight_probe",
-        description: "Probe mid-flight cancellation.",
-        execute: (_input: Record<string, unknown>, options?: { signal?: AbortSignal }) =>
-          new Promise((resolve, reject) => {
-            const timer = setTimeout(() => {
-              resolve({ content: [{ type: "text", text: "no-signal-timeout" }] });
-            }, 500);
-            options?.signal?.addEventListener("abort", () => {
-              clearTimeout(timer);
-              toolAborted =
-                options.signal?.reason instanceof DOMException
-                  ? options.signal.reason.name
-                  : String(options.signal?.reason);
-              reject(options.signal?.reason);
-            });
-          }),
-      },
-      { signal: reg.signal },
-    );
-    const probeTool = (await mc.getTools()).find((x) => x.name === "abort_flight_probe");
-    if (!probeTool) {
-      log("FAIL: abort_flight_probe not listed");
-    } else {
-      const controller = new AbortController();
-      const pending = mc.executeTool(probeTool, "{}", { signal: controller.signal });
-      controller.abort(new DOMException("probe cancel", "AbortError"));
-      await pending.then(
-        (raw) =>
-          log(
-            String(raw).includes("no-signal-timeout")
-              ? "INFO: aborted executeTool did not reject (no signal forwarded; Chrome <=152)"
-              : `FAIL: aborted executeTool resolved (${raw})`,
-          ),
-        (err: unknown) =>
-          log(
-            toolAborted
-              ? `PASS: aborted executeTool rejected (caller: ${errName(err)}, tool: ${toolAborted})`
-              : `INFO: aborted executeTool rejected but tool-side signal never fired (caller: ${errName(err)}; no signal forwarded; Chrome <=152)`,
-          ),
+    let markSettled!: () => void;
+    const settled = new Promise<void>((resolve) => {
+      markSettled = resolve;
+    });
+    let markStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    try {
+      await mc.registerTool(
+        {
+          name: "abort_flight_probe",
+          description: "Probe mid-flight cancellation.",
+          execute: (_input: Record<string, unknown>, options?: { signal?: AbortSignal }) =>
+            new Promise((resolve, reject) => {
+              markStarted();
+              const timer = setTimeout(() => {
+                resolve({ content: [{ type: "text", text: "no-signal-timeout" }] });
+                markSettled();
+              }, 500);
+              options?.signal?.addEventListener("abort", () => {
+                clearTimeout(timer);
+                toolAborted =
+                  options.signal?.reason instanceof DOMException
+                    ? options.signal.reason.name
+                    : String(options.signal?.reason);
+                reject(options.signal?.reason);
+                markSettled();
+              });
+            }),
+        },
+        { signal: reg.signal },
       );
+      const probeTool = (await mc.getTools()).find((x) => x.name === "abort_flight_probe");
+      if (!probeTool) {
+        log("FAIL: abort_flight_probe not listed");
+      } else {
+        const pending = executeTool(probeTool, inputFor({}), { signal: controller.signal });
+        await waitForStart(started, pending);
+        controller.abort(new DOMException("probe cancel", "AbortError"));
+        await pending.then(
+          (raw) =>
+            log(
+              String(raw).includes("no-signal-timeout")
+                ? "INFO: aborted executeTool did not reject (no signal forwarded; Chrome <=152)"
+                : `FAIL: aborted executeTool resolved (${raw})`,
+            ),
+          async (err: unknown) => {
+            await settled;
+            log(
+              toolAborted
+                ? `PASS: aborted executeTool rejected (caller: ${errName(err)}, tool: ${toolAborted})`
+                : `INFO: aborted executeTool rejected but tool-side signal never fired (caller: ${errName(err)}; no signal forwarded; Chrome <=152)`,
+            );
+          },
+        );
+      }
+    } finally {
+      controller.abort();
+      reg.abort();
     }
-    reg.abort();
   }
 
   // Probe: unregister mid-flight — execution survives (Chrome 153.0.8008+ / polyfill 1.1.0+).
   {
     const reg = new AbortController();
-    await mc.registerTool(
-      {
-        name: "unregister_probe",
-        description: "Probe unregister-during-execution.",
-        execute: () =>
-          new Promise((resolve) =>
-            setTimeout(() => resolve({ content: [{ type: "text", text: "survived" }] }), 200),
-          ),
-      },
-      { signal: reg.signal },
-    );
-    const probeTool = (await mc.getTools()).find((x) => x.name === "unregister_probe");
-    if (!probeTool) {
-      log("FAIL: unregister_probe not listed");
-      reg.abort();
-    } else {
-      const pending = mc.executeTool(probeTool, "{}");
-      reg.abort(); // unregister while in flight
-      await pending.then(
-        (raw) =>
-          log(
-            String(raw).includes("survived")
-              ? "PASS: unregister does not cancel in-flight execution"
-              : `FAIL: unexpected result ${raw}`,
-          ),
-        (err: unknown) =>
-          log(
-            `INFO: in-flight execution rejected on unregister (${errName(err)}; pre-153.0.8008 behavior)`,
-          ),
+    let markStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    try {
+      await mc.registerTool(
+        {
+          name: "unregister_probe",
+          description: "Probe unregister-during-execution.",
+          execute: () =>
+            new Promise((resolve) => {
+              markStarted();
+              setTimeout(() => resolve({ content: [{ type: "text", text: "survived" }] }), 200);
+            }),
+        },
+        { signal: reg.signal },
       );
+      const probeTool = (await mc.getTools()).find((x) => x.name === "unregister_probe");
+      if (!probeTool) {
+        log("FAIL: unregister_probe not listed");
+      } else {
+        const pending = executeTool(probeTool, inputFor({}));
+        await waitForStart(started, pending);
+        reg.abort(); // unregister while in flight
+        await pending.then(
+          (raw) =>
+            log(
+              String(raw).includes("survived")
+                ? "PASS: unregister does not cancel in-flight execution"
+                : `FAIL: unexpected result ${raw}`,
+            ),
+          (err: unknown) =>
+            log(
+              `INFO: in-flight execution rejected on unregister (${errName(err)}; pre-153.0.8008 behavior)`,
+            ),
+        );
+      }
+    } finally {
+      reg.abort();
     }
   }
 
@@ -232,7 +377,9 @@ async function runSelfTest(log: (line: string) => void) {
       },
       { signal: AbortSignal.abort(new DOMException("probe", "AbortError")) },
     );
-    log(`INFO: already-aborted register RESOLVED (value=${String(result)}; pre-152 native behavior)`);
+    log(
+      `INFO: already-aborted register RESOLVED (value=${String(result)}; pre-152 native behavior)`,
+    );
   } catch (err) {
     log(`PASS: already-aborted register rejects (${errName(err)})`);
   }
@@ -292,7 +439,9 @@ function SelfTestPanel() {
 
   const handleRunSelfTest = useCallback(() => {
     setSelftestOutput([]);
-    void runSelfTest((line) => setSelftestOutput((lines) => [...lines, line]));
+    void runSelfTest((line) => setSelftestOutput((lines) => [...lines, line])).catch(
+      (err: unknown) => setSelftestOutput((lines) => [...lines, `FAIL: self-test (${errName(err)})`]),
+    );
   }, []);
 
   return (
