@@ -178,9 +178,10 @@ export interface ModelContextGetToolOptions {
 export interface ModelContext extends EventTarget {
   registerTool(tool: ToolDescriptor, options?: RegisterToolOptions): Promise<undefined>;
   getTools?(options?: ModelContextGetToolOptions): Promise<RegisteredTool[]>;
+  /** Pass an object ({} for no arguments). JSON strings are a legacy polyfill extension. */
   executeTool?(
     tool: RegisteredTool,
-    inputArguments: string | object,
+    inputArguments?: string | object,
     options?: ExecuteToolOptions,
   ): Promise<string | null>;
   ontoolchange: ((this: ModelContext, ev: Event) => unknown) | null;

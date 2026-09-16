@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
   CallToolResult,
   InputSchema,
@@ -107,6 +107,33 @@ describe("document.modelContext.executeTool (polyfill)", () => {
     const [tool] = await mc().getTools();
     const raw = await mc().executeTool(tool, { query: "x" });
     expect(JSON.parse(raw as string)).toEqual({ content: [{ type: "text", text: "ok" }] });
+  });
+
+  it.each([
+    undefined,
+    null,
+    42,
+    true,
+    Symbol("input"),
+  ])("rejects non-object input %s with TypeError", async (input) => {
+    installPolyfill();
+    const execute = vi.fn(async () => ({ content: [] }));
+    await mc().registerTool(makeTool({ inputSchema: undefined, execute }));
+    const [tool] = await mc().getTools();
+    const pending = mc().executeTool(tool, input as object);
+    await expect(pending).rejects.toBeInstanceOf(TypeError);
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it("requires an explicit empty object for a tool without arguments", async () => {
+    installPolyfill();
+    const execute = vi.fn(async () => ({ content: [] }));
+    await mc().registerTool(makeTool({ inputSchema: undefined, execute }));
+    const [tool] = await mc().getTools();
+    await expect(mc().executeTool(tool)).rejects.toBeInstanceOf(TypeError);
+    expect(execute).not.toHaveBeenCalled();
+    await expect(mc().executeTool(tool, {})).resolves.toBe('{"content":[]}');
+    expect(execute).toHaveBeenCalledTimes(1);
   });
 
   it("rejects UnknownError for a stale/unregistered tool", async () => {

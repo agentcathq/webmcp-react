@@ -6,6 +6,17 @@ All notable changes to `webmcp-react` are documented here. The format is based o
 
 ## Unreleased
 
+### Changed
+
+- Object inputs to the polyfill's `document.modelContext.executeTool()` now pass through
+  JSON serialization, matching Chrome 155.0.8052.0+. Handlers receive an independent
+  parsed copy; getters and `toJSON()` follow JSON semantics. Invalid or unserializable
+  inputs reject before execution, with serialization exceptions preserved. The input
+  parameter is optional in the type signature, but callers must pass an object (`{}` for
+  tools without arguments); omitted input rejects with `TypeError`.
+- Legacy JSON-string inputs remain supported by the polyfill in 1.x. Their deprecation
+  is planned for 2.x, without removal in 2.x. The React hook's `execute()` API is unchanged.
+
 ### Extension
 
 - A tab no longer loses its tools on an in-app route change that only alters the URL
