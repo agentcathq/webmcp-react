@@ -113,11 +113,11 @@ interface CallToolResult {
 When native WebMCP is unavailable, the provider installs a polyfill that exposes:
 
 - `document.modelContext` — the registration API (an `EventTarget`). `registerTool(tool, options?)` returns a `Promise<undefined>` that **rejects** on invalid input (see below). Unregistration is **AbortSignal-only** — pass `{ signal }` and abort it to remove the tool. There is no `unregisterTool`.
-- `document.modelContext.getTools(options?)` / `executeTool(tool, inputArguments, options?)`
-  — the consumer API (same shape as native Chrome). `getTools()` resolves sorted, fresh
+- `document.modelContext.getTools(options?)` / `executeTool(tool, inputArguments?, options?)`
+  — the consumer API. `getTools()` resolves sorted, fresh
   `RegisteredTool` objects whose `inputSchema` is a deep-copied **object**;
-  `executeTool` accepts a JSON string or object input, forwards `options.signal` into the
-  tool's execution signal, rejects `UnknownError` on failure, and — unlike native Chrome —
+  `executeTool` serializes object inputs to JSON before passing a parsed copy to the tool,
+  forwards `options.signal` into the tool's execution signal, and — unlike native Chrome —
   validates input against `inputSchema` (`OperationError`).
 - `navigator.modelContextTesting` — **deprecated** wrapper over the same engine
   (`listTools()` keeps returning a JSON-string `inputSchema`); removed in 2.0.0.
@@ -127,6 +127,25 @@ When native WebMCP is unavailable, the provider installs a polyfill that exposes
 | ≤152 | `execute(input)` — no tool-side signal (the library substitutes one); `navigator.modelContextTesting` removed in 152.0.7940.0 |
 | 153 | `execute(input, { signal })`; unregistration no longer cancels in-flight executions (153.0.8008.0+) |
 | 154 | `RegisteredTool.inputSchema` is an object (was a JSON string) |
+| 155 | `executeTool` takes object inputs instead of JSON strings (155.0.8052.0+) |
+
+Pass an object to `executeTool`, using `{}` for tools without arguments. Although the
+input parameter is optional in the browser signature, omitted input, `undefined`, `null`,
+and non-object values reject with `TypeError`. This does not change the React hook's
+`execute()` convenience, which defaults to `{}`.
+
+Object inputs follow JSON serialization rules: nested `undefined` properties are omitted,
+`toJSON()` is respected, and the handler receives an independent copy. Circular references,
+BigInt values that cannot be serialized, and serialization returning `undefined` reject
+with `TypeError`. Exceptions thrown by getters or `toJSON()` reject with the original
+exception. These failures occur before the handler runs. A serialized value that is not
+an object, or a tool execution failure, rejects with `UnknownError`.
+
+For compatibility, the polyfill also accepts JSON-string inputs and preserves their
+existing parsing errors (`UnknownError`). Native Chrome through 154 requires strings;
+native Chrome 155.0.8052.0+ requires objects. Polyfill string support remains available in
+1.x and is planned for deprecation in 2.x, without removal in 2.x. Prefer objects for new
+consumer code. This compatibility policy is separate from the deprecated testing shim.
 
 The native API is detected by reading `document.modelContext` only; the polyfill marks itself with `__isWebMCPPolyfill` so native support short-circuits installation.
 

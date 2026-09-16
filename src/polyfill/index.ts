@@ -59,7 +59,7 @@ class PolyfillModelContext extends EventTarget {
 
   executeTool(
     tool: RegisteredTool,
-    inputArguments: string | object,
+    inputArguments?: string | object,
     options?: ExecuteToolOptions,
   ): Promise<string | null> {
     const registered = tool ? this.#registry.get(tool.name) : undefined;

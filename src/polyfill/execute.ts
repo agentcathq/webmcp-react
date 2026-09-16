@@ -10,35 +10,46 @@ function serializeResult(result: unknown): string {
 }
 
 /**
- * Execute a registered tool the way native Chrome does (152–154 behavior):
- * JSON-string or object input, per-execution AbortSignal forwarded to the
- * tool, caller abort rejects with the caller signal's reason while the
- * tool-side signal aborts with a generic AbortError, late settlement after
- * abort is ignored, and results serialize to a string (objects via JSON,
- * primitives via String, empty string → "Operation succeeded").
- *
- * Deviation from native: input is validated against the tool's inputSchema
- * (OperationError) — Chrome does not validate yet (spec issue #92).
+ * Execute with JSON-serialized inputs and a per-execution AbortSignal.
+ * Legacy JSON strings remain supported. Unlike native Chrome, the polyfill
+ * validates input against inputSchema (OperationError; spec issue #92).
  */
 export function runTool(
   tool: ToolDescriptor,
-  inputArguments: string | object,
+  inputArguments?: string | object,
   callerSignal?: AbortSignal,
 ): Promise<string> {
-  if (callerSignal?.aborted) {
-    return Promise.reject(callerSignal.reason);
-  }
-
   let parsed: unknown;
   if (typeof inputArguments === "string") {
+    if (callerSignal?.aborted) {
+      return Promise.reject(callerSignal.reason);
+    }
     try {
       parsed = JSON.parse(inputArguments);
     } catch {
       return Promise.reject(new DOMException("Failed to parse input arguments", "UnknownError"));
     }
   } else {
-    parsed = inputArguments;
+    if (
+      inputArguments === null ||
+      (typeof inputArguments !== "object" && typeof inputArguments !== "function")
+    ) {
+      return Promise.reject(new TypeError("Input arguments must be an object"));
+    }
+    try {
+      const serialized = JSON.stringify(inputArguments);
+      if (serialized === undefined) {
+        return Promise.reject(new TypeError("Input arguments are not JSON-serializable"));
+      }
+      parsed = JSON.parse(serialized);
+    } catch (thrown) {
+      return Promise.reject(thrown);
+    }
   }
+  if (callerSignal?.aborted) {
+    return Promise.reject(callerSignal.reason);
+  }
+
   if (typeof parsed !== "object" || parsed === null) {
     return Promise.reject(
       new DOMException("Input arguments must be a JSON object", "UnknownError"),
