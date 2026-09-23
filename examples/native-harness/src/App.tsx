@@ -144,11 +144,26 @@ async function runSelfTest(log: (line: string) => void) {
             : "FAIL: object input serialization or cloning",
         );
 
+        const defaults: [string, () => Promise<unknown>][] = [
+          ["omitted input", () => executeTool(probe)],
+          ["undefined input", () => executeTool(probe, undefined)],
+          ["undefined input and options", () => executeTool(probe, undefined, undefined)],
+        ];
+        for (const [label, run] of defaults) {
+          const before = calls;
+          const previous = received;
+          await run();
+          log(
+            calls === before + 1 && received !== previous && JSON.stringify(received) === "{}"
+              ? `PASS: ${label} defaults to an empty object`
+              : `FAIL: ${label} default`,
+          );
+        }
+
         const circular: Record<string, unknown> = {};
         circular.self = circular;
         const invalid: [string, () => Promise<unknown>][] = [
-          ["omitted", () => executeTool(probe)],
-          ["undefined", () => executeTool(probe, undefined)],
+          ["undefined with options", () => executeTool(probe, undefined, {})],
           ["null", () => executeTool(probe, null as unknown as object)],
           ["circular", () => executeTool(probe, circular)],
           ["BigInt", () => executeTool(probe, { value: BigInt(1) })],
