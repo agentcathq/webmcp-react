@@ -86,7 +86,14 @@ describe("native harness consumer probes", () => {
     const output = await run();
     await expectFinished(output);
     expect(output).toHaveTextContent("PASS: object input serialized and cloned");
-    expect(output).toHaveTextContent("PASS: omitted input rejects TypeError before handler");
+    expect(output).toHaveTextContent("PASS: undefined input defaults to an empty object");
+    expect(output).toHaveTextContent(
+      "PASS: undefined input and options defaults to an empty object",
+    );
+    expect(output).toHaveTextContent(
+      "PASS: undefined with options input rejects TypeError before handler",
+    );
+    expect(output).toHaveTextContent("PASS: omitted input defaults to an empty object");
     expect(output).toHaveTextContent("PASS: circular input rejects TypeError before handler");
     expect(output).toHaveTextContent("PASS: legacy JSON string accepted");
   });
@@ -96,6 +103,13 @@ describe("native harness consumer probes", () => {
     const output = await run();
     await expectFinished(output);
     expect(output).toHaveTextContent("PASS: object input serialized and cloned");
+    expect(output).toHaveTextContent("PASS: undefined input defaults to an empty object");
+    expect(output).toHaveTextContent(
+      "PASS: undefined input and options defaults to an empty object",
+    );
+    expect(output).toHaveTextContent(
+      "PASS: undefined with options input rejects TypeError before handler",
+    );
     expect(output).toHaveTextContent("PASS: legacy JSON string rejects TypeError");
   });
 

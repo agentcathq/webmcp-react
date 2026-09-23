@@ -129,10 +129,12 @@ When native WebMCP is unavailable, the provider installs a polyfill that exposes
 | 154 | `RegisteredTool.inputSchema` is an object (was a JSON string) |
 | 155 | `executeTool` takes object inputs instead of JSON strings (155.0.8052.0+) |
 
-Pass an object to `executeTool`, using `{}` for tools without arguments. Although the
-input parameter is optional in the browser signature, omitted input, `undefined`, `null`,
-and non-object values reject with `TypeError`. This does not change the React hook's
-`execute()` convenience, which defaults to `{}`.
+Pass an object to `executeTool`, using `{}` for tools without arguments. When options
+are omitted or `undefined`, omitting input or passing `undefined` defaults to a fresh `{}`.
+When options are supplied (including `{}` or `null`), `undefined` input rejects with
+`TypeError`; pass `{}` explicitly, for example `executeTool(tool, {}, { signal })`.
+`null` and other non-object inputs also reject with `TypeError`. This does not change
+the React hook's `execute()` convenience, which defaults to `{}`.
 
 Object inputs follow JSON serialization rules: nested `undefined` properties are omitted,
 `toJSON()` is respected, and the handler receives an independent copy. Circular references,
