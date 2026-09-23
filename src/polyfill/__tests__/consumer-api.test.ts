@@ -115,13 +115,13 @@ describe("document.modelContext.executeTool (polyfill)", () => {
     42,
     true,
     Symbol("input"),
-  ])("rejects non-object input %s with TypeError", async (input) => {
+  ])("rejects non-object input %s with UnknownError", async (input) => {
     installPolyfill();
     const execute = vi.fn(async () => ({ content: [] }));
     await mc().registerTool(makeTool({ inputSchema: undefined, execute }));
     const [tool] = await mc().getTools();
     const pending = mc().executeTool(tool, input as object);
-    await expect(pending).rejects.toBeInstanceOf(TypeError);
+    await expect(pending).rejects.toMatchObject({ name: "UnknownError" });
     expect(execute).not.toHaveBeenCalled();
   });
 
@@ -153,7 +153,9 @@ describe("document.modelContext.executeTool (polyfill)", () => {
     const execute = vi.fn(async () => ({ content: [] }));
     await mc().registerTool(makeTool({ inputSchema: undefined, execute }));
     const [tool] = await mc().getTools();
-    await expect(mc().executeTool(tool, undefined, options)).rejects.toBeInstanceOf(TypeError);
+    await expect(mc().executeTool(tool, undefined, options)).rejects.toMatchObject({
+      name: "UnknownError",
+    });
     expect(execute).not.toHaveBeenCalled();
     await expect(mc().executeTool(tool, {}, options)).resolves.toBe('{"content":[]}');
     expect(execute).toHaveBeenCalledTimes(1);

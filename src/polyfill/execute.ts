@@ -10,8 +10,8 @@ function serializeResult(result: unknown): string {
 }
 
 /**
- * Execute with JSON-serialized inputs and a per-execution AbortSignal.
- * Legacy JSON strings remain supported. Unlike native Chrome, the polyfill
+ * Execute with object or JSON-string inputs and a per-execution AbortSignal.
+ * Object inputs are passed by reference. Unlike native Chrome, the polyfill
  * validates input against inputSchema (OperationError; spec issue #92).
  */
 export function runTool(
@@ -19,35 +19,19 @@ export function runTool(
   inputArguments?: string | object,
   callerSignal?: AbortSignal,
 ): Promise<string> {
+  if (callerSignal?.aborted) {
+    return Promise.reject(callerSignal.reason);
+  }
+
   let parsed: unknown;
   if (typeof inputArguments === "string") {
-    if (callerSignal?.aborted) {
-      return Promise.reject(callerSignal.reason);
-    }
     try {
       parsed = JSON.parse(inputArguments);
     } catch {
       return Promise.reject(new DOMException("Failed to parse input arguments", "UnknownError"));
     }
   } else {
-    if (
-      inputArguments === null ||
-      (typeof inputArguments !== "object" && typeof inputArguments !== "function")
-    ) {
-      return Promise.reject(new TypeError("Input arguments must be an object"));
-    }
-    try {
-      const serialized = JSON.stringify(inputArguments);
-      if (serialized === undefined) {
-        return Promise.reject(new TypeError("Input arguments are not JSON-serializable"));
-      }
-      parsed = JSON.parse(serialized);
-    } catch (thrown) {
-      return Promise.reject(thrown);
-    }
-  }
-  if (callerSignal?.aborted) {
-    return Promise.reject(callerSignal.reason);
+    parsed = inputArguments;
   }
 
   if (typeof parsed !== "object" || parsed === null) {

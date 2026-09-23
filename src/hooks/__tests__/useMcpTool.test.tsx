@@ -1340,7 +1340,39 @@ describe("consumer object inputs", () => {
     expect(onSuccess).toHaveBeenCalledExactlyOnceWith(makeResult("hello world"));
   });
 
-  it("rejects unserializable consumer input without changing hook state or callbacks", async () => {
+  it.each(["direct", "consumer"])("preserves non-JSON input through %s execution", async (path) => {
+    const input = { date: new Date("2026-01-01T00:00:00Z"), value: 1n };
+    const handler = vi.fn((args) => {
+      expect(args).toBe(input);
+      return makeResult(`${args.date.getUTCFullYear()}: ${args.value}`);
+    });
+    const onSuccess = vi.fn();
+    const executeRef = { current: null as ExecuteFn | null };
+    const view = renderWithProvider(
+      <StrictMode>
+        <ToolComponent
+          config={{ name: "inspect", description: "Inspect input", handler, onSuccess }}
+          onExecuteRef={executeRef}
+        />
+      </StrictMode>,
+    );
+    const { mc, tool } = await getConsumer();
+    await act(async () => {
+      if (path === "direct") {
+        expect(await executeRef.current?.(input)).toEqual(makeResult("2026: 1"));
+      } else {
+        expect(JSON.parse((await mc.executeTool(tool, input)) as string)).toEqual(
+          makeResult("2026: 1"),
+        );
+      }
+    });
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(onSuccess).toHaveBeenCalledExactlyOnceWith(makeResult("2026: 1"));
+    expect(view.getByTestId("count").textContent).toBe("1");
+    expect(view.getByTestId("result").textContent).toBe("2026: 1");
+  });
+
+  it("rejects invalid consumer input without changing hook state or callbacks", async () => {
     const handler = vi.fn(() => OK_RESULT);
     const onSuccess = vi.fn();
     const onError = vi.fn();
@@ -1350,10 +1382,10 @@ describe("consumer object inputs", () => {
       />,
     );
     const { mc, tool } = await getConsumer();
-    const input: Record<string, unknown> = {};
-    input.self = input;
     await act(async () => {
-      await expect(mc.executeTool(tool, input)).rejects.toBeInstanceOf(TypeError);
+      await expect(mc.executeTool(tool, null as unknown as object)).rejects.toMatchObject({
+        name: "UnknownError",
+      });
     });
     expect(handler).not.toHaveBeenCalled();
     expect(onSuccess).not.toHaveBeenCalled();

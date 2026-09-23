@@ -116,7 +116,7 @@ When native WebMCP is unavailable, the provider installs a polyfill that exposes
 - `document.modelContext.getTools(options?)` / `executeTool(tool, inputArguments?, options?)`
   — the consumer API. `getTools()` resolves sorted, fresh
   `RegisteredTool` objects whose `inputSchema` is a deep-copied **object**;
-  `executeTool` serializes object inputs to JSON before passing a parsed copy to the tool,
+  `executeTool` accepts object inputs by reference or parses JSON-string inputs,
   forwards `options.signal` into the tool's execution signal, and — unlike native Chrome —
   validates input against `inputSchema` (`OperationError`).
 - `navigator.modelContextTesting` — **deprecated** wrapper over the same engine
@@ -131,17 +131,23 @@ When native WebMCP is unavailable, the provider installs a polyfill that exposes
 
 Pass an object to `executeTool`, using `{}` for tools without arguments. When options
 are omitted or `undefined`, omitting input or passing `undefined` defaults to a fresh `{}`.
-When options are supplied (including `{}` or `null`), `undefined` input rejects with
-`TypeError`; pass `{}` explicitly, for example `executeTool(tool, {}, { signal })`.
-`null` and other non-object inputs also reject with `TypeError`. This does not change
-the React hook's `execute()` convenience, which defaults to `{}`.
+When options are supplied (including `{}` or `null`), `undefined` input rejects; pass
+`{}` explicitly, for example `executeTool(tool, {}, { signal })`. The polyfill uses
+`UnknownError` for invalid inputs; native Chrome uses `TypeError` for non-object inputs.
+This does not change the React hook's `execute()` convenience, which defaults to `{}`.
 
-Object inputs follow JSON serialization rules: nested `undefined` properties are omitted,
-`toJSON()` is respected, and the handler receives an independent copy. Circular references,
-BigInt values that cannot be serialized, and serialization returning `undefined` reject
-with `TypeError`. Exceptions thrown by getters or `toJSON()` reject with the original
-exception. These failures occur before the handler runs. A serialized value that is not
-an object, or a tool execution failure, rejects with `UnknownError`.
+The 1.x polyfill preserves object inputs by reference. It does not JSON-serialize them
+or invoke `toJSON()`: nested objects, Dates, `undefined` properties, and other values
+reach the handler unchanged, subject to input schema validation. Handler mutations can
+therefore affect the caller's object. Invalid JSON strings and non-object inputs reject
+with `UnknownError`; schema violations reject with `OperationError`. An already-aborted
+execution rejects with the caller's abort reason before input parsing or validation.
+
+Native Chrome 155 instead JSON-serializes object inputs and passes an independent parsed
+copy to the handler. Nested `undefined` properties are omitted and `toJSON()` is applied.
+Circular references, BigInt values, and serialization returning `undefined` reject with
+`TypeError`; exceptions from serialization reject with the original exception. Use plain
+JSON-compatible objects for portable calls across native Chrome and the polyfill.
 
 For compatibility, the polyfill also accepts JSON-string inputs and preserves their
 existing parsing errors (`UnknownError`). Native Chrome through 154 requires strings;

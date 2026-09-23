@@ -6,15 +6,17 @@ All notable changes to `webmcp-react` are documented here. The format is based o
 
 ## Unreleased
 
-### Changed
+### Added
 
-- Object inputs to the polyfill's `document.modelContext.executeTool()` now pass through
-  JSON serialization, matching Chrome 155.0.8052.0+. Handlers receive an independent
-  parsed copy; getters and `toJSON()` follow JSON semantics. Invalid or unserializable
-  inputs reject before execution, with serialization exceptions preserved. The input
-  defaults to a fresh `{}` when both input and options are omitted or `undefined`.
-  With supplied options, callers must pass an object (`{}` for tools without arguments);
-  `undefined` input rejects with `TypeError`.
+- The polyfill's `document.modelContext.executeTool()` defaults to a fresh `{}` when
+  both input and options are omitted or `undefined`. With supplied options, callers
+  must pass an object (`{}` for tools without arguments).
+
+### Compatibility
+
+- The 1.x polyfill continues to pass object inputs by reference, preserve input errors,
+  and check cancellation before input parsing or validation. Native Chrome 155.0.8052.0+
+  JSON-serializes object inputs instead; use plain JSON-compatible objects for portable calls.
 - Legacy JSON-string inputs remain supported by the polyfill in 1.x. Their deprecation
   is planned for 2.x, without removal in 2.x. The React hook's `execute()` API is unchanged.
 

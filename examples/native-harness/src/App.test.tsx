@@ -26,8 +26,18 @@ function nativeInputBoundary(mode: "modern" | "legacy" | Error, delayedAbort = f
       if (mode === "legacy" && typeof input !== "string") {
         return Promise.reject(new DOMException("Failed to parse input arguments", "UnknownError"));
       }
-      if (mode === "modern" && typeof input === "string") {
-        return Promise.reject(new TypeError("Input must be an object"));
+      if (mode === "modern") {
+        if (input === undefined && options === undefined) input = {};
+        if (input === null || (typeof input !== "object" && typeof input !== "function")) {
+          return Promise.reject(new TypeError("Input must be an object"));
+        }
+        try {
+          const serialized = JSON.stringify(input);
+          if (serialized === undefined) throw new TypeError("Input is not JSON-serializable");
+          input = JSON.parse(serialized);
+        } catch (error) {
+          return Promise.reject(error);
+        }
       }
       if (delayedAbort && options?.signal) {
         const toolController = new AbortController();
@@ -82,19 +92,21 @@ async function expectFinished(output: HTMLElement) {
 }
 
 describe("native harness consumer probes", () => {
-  it("reports real polyfill object serialization, invalid input, and legacy compatibility", async () => {
+  it("reports polyfill object identity, input errors, and legacy compatibility", async () => {
     const output = await run();
     await expectFinished(output);
-    expect(output).toHaveTextContent("PASS: object input serialized and cloned");
+    expect(output).toHaveTextContent("PASS: polyfill preserves object input");
     expect(output).toHaveTextContent("PASS: undefined input defaults to an empty object");
     expect(output).toHaveTextContent(
       "PASS: undefined input and options defaults to an empty object",
     );
     expect(output).toHaveTextContent(
-      "PASS: undefined with options input rejects TypeError before handler",
+      "PASS: undefined with options input rejects UnknownError before handler",
     );
     expect(output).toHaveTextContent("PASS: omitted input defaults to an empty object");
-    expect(output).toHaveTextContent("PASS: circular input rejects TypeError before handler");
+    expect(output).toHaveTextContent("PASS: polyfill preserves circular input");
+    expect(output).toHaveTextContent("PASS: polyfill preserves BigInt input");
+    expect(output).toHaveTextContent("PASS: polyfill preserves toJSON undefined input");
     expect(output).toHaveTextContent("PASS: legacy JSON string accepted");
   });
 
