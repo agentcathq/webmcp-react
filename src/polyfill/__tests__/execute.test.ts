@@ -38,98 +38,111 @@ describe("runTool", () => {
     expect(execute.mock.calls[0][0]).toEqual({ query: "hi" });
   });
 
-  it("gives the tool an independent JSON copy of nested input", async () => {
+  it("passes nested objects by reference", async () => {
     const input = { nested: { value: "original" } };
     const tool = makeTool({
       inputSchema: undefined,
       execute: (args) => {
+        expect(args).toBe(input);
         (args.nested as { value: string }).value = "changed";
         return OK;
       },
     });
     await runTool(tool, input);
-    expect(input.nested.value).toBe("original");
+    expect(input.nested.value).toBe("changed");
   });
 
-  it("applies JSON transformations before validating the input schema", async () => {
+  it("validates the original input without calling toJSON", async () => {
+    const toJSON = vi.fn(() => "hi");
     const execute = vi.fn(async () => OK);
-    await runTool(makeTool({ execute }), {
-      query: { toJSON: () => "hi" },
-      nested: { omitted: undefined, values: [undefined, Number.NaN] },
+    await expect(runTool(makeTool({ execute }), { query: { toJSON } })).rejects.toMatchObject({
+      name: "OperationError",
     });
-    expect(execute).toHaveBeenCalledWith(
-      { query: "hi", nested: { values: [null, null] } },
-      { signal: expect.any(AbortSignal) },
-    );
-  });
-
-  it.each([
-    ["array", [1, 2], [1, 2]],
-    ["custom toJSON", { toJSON: () => ({ query: "hi" }) }, { query: "hi" }],
-    [
-      "callable object",
-      Object.assign(() => {}, { toJSON: () => ({ query: "hi" }) }),
-      { query: "hi" },
-    ],
-  ])("accepts a serializable %s", async (_label, input, expected) => {
-    const execute = vi.fn(async () => OK);
-    await runTool(makeTool({ inputSchema: undefined, execute }), input as object);
-    expect(execute.mock.calls[0][0]).toEqual(expected);
-  });
-
-  it.each([
-    [
-      "cycle",
-      () => {
-        const input: Record<string, unknown> = {};
-        input.self = input;
-        return input;
-      },
-    ],
-    ["BigInt", () => ({ value: 1n })],
-    ["undefined serialization", () => ({ toJSON: () => undefined })],
-    ["function", () => () => {}],
-  ])("rejects %s input without executing the tool", async (_label, makeInput) => {
-    const execute = vi.fn(async () => OK);
-    const pending = runTool(makeTool({ inputSchema: undefined, execute }), makeInput());
-    await expect(pending).rejects.toBeInstanceOf(TypeError);
+    expect(toJSON).not.toHaveBeenCalled();
     expect(execute).not.toHaveBeenCalled();
   });
 
-  it.each(["getter", "toJSON"])("preserves an exception thrown by an input %s", async (kind) => {
-    const reason = new Error("cannot read input");
-    const fail = () => {
-      throw reason;
-    };
+  it.each([
+    ["array", [1, 2]],
+    ["Date", { date: new Date("2026-01-01T00:00:00Z") }],
+    ["undefined and NaN", { omitted: undefined, values: [undefined, Number.NaN] }],
+    ["BigInt", { value: 1n }],
+    ["custom toJSON", { toJSON: () => ({ query: "hi" }) }],
+    ["undefined toJSON", { toJSON: () => undefined }],
+    ["primitive toJSON", { toJSON: () => 42 }],
+  ])("preserves %s input", async (_label, input) => {
+    const execute = vi.fn(async () => OK);
+    await runTool(makeTool({ inputSchema: undefined, execute }), input as object);
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(execute.mock.calls[0][0]).toBe(input);
+  });
+
+  it("accepts circular input", async () => {
+    const input: Record<string, unknown> = {};
+    input.self = input;
+    const execute = vi.fn(async () => OK);
+    await runTool(makeTool({ inputSchema: undefined, execute }), input);
+    expect(execute.mock.calls[0][0]).toBe(input);
+  });
+
+  it.each(["getter", "toJSON"])("does not invoke an unused input %s", async (kind) => {
+    const fail = vi.fn(() => {
+      throw new Error("cannot read input");
+    });
     const input =
       kind === "toJSON"
         ? { toJSON: fail }
         : Object.defineProperty({}, "query", { get: fail, enumerable: true });
     const execute = vi.fn(async () => OK);
-    const pending = runTool(makeTool({ execute }), input);
-    await expect(pending).rejects.toBe(reason);
+    await expect(runTool(makeTool({ inputSchema: undefined, execute }), input)).resolves.toBe(
+      JSON.stringify(OK),
+    );
+    expect(execute.mock.calls[0][0]).toBe(input);
+    expect(fail).not.toHaveBeenCalled();
+  });
+
+  it("preserves an exception thrown by a getter during schema validation", async () => {
+    const reason = new Error("cannot read input");
+    const input = Object.defineProperty({}, "query", {
+      get() {
+        throw reason;
+      },
+      enumerable: true,
+    });
+    const execute = vi.fn(async () => OK);
+    await expect(runTool(makeTool({ execute }), input)).rejects.toBe(reason);
     expect(execute).not.toHaveBeenCalled();
   });
 
-  it("rejects an object that serializes to a primitive before executing the tool", async () => {
+  it.each([
+    ["function", () => {}],
+    ["callable with toJSON", Object.assign(() => {}, { toJSON: () => ({ query: "hi" }) })],
+  ])("rejects a %s with UnknownError", async (_label, input) => {
+    const execute = vi.fn(async () => OK);
+    await expect(runTool(makeTool({ execute }), input as object)).rejects.toMatchObject({
+      name: "UnknownError",
+    });
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["invalid input", null],
+    ["schema violation", {}],
+    ["unserializable input", { value: 1n }],
+    [
+      "throwing toJSON",
+      {
+        toJSON() {
+          throw new Error("must not serialize");
+        },
+      },
+    ],
+  ])("checks cancellation before %s", async (_label, input) => {
+    const reason = new Error("cancelled");
     const execute = vi.fn(async () => OK);
     await expect(
-      runTool(makeTool({ inputSchema: undefined, execute }), { toJSON: () => 42 }),
-    ).rejects.toThrow(expect.objectContaining({ name: "UnknownError" }));
-    expect(execute).not.toHaveBeenCalled();
-  });
-
-  it("does not execute if input serialization aborts the caller signal", async () => {
-    const controller = new AbortController();
-    const reason = new Error("cancelled while reading input");
-    const execute = vi.fn(async () => OK);
-    const input = {
-      toJSON() {
-        controller.abort(reason);
-        return { query: "hi" };
-      },
-    };
-    await expect(runTool(makeTool({ execute }), input, controller.signal)).rejects.toBe(reason);
+      runTool(makeTool({ execute }), input as object, AbortSignal.abort(reason)),
+    ).rejects.toBe(reason);
     expect(execute).not.toHaveBeenCalled();
   });
 

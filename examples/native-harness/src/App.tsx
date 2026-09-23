@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { WebMCPProvider, useMcpTool, useWebMCPStatus } from "webmcp-react";
+import { useMcpTool, useWebMCPStatus, WebMCPProvider } from "webmcp-react";
 import { z } from "zod";
 
 /**
@@ -135,14 +135,23 @@ async function runSelfTest(log: (line: string) => void) {
         log("INFO: modern input probes skipped on legacy native");
       } else {
         const transformed = { nested: { text: "serialized" } };
-        await executeTool(probe, { toJSON: () => transformed });
-        log(
-          received !== transformed &&
-            (received as typeof transformed).nested !== transformed.nested &&
-            JSON.stringify(received) === JSON.stringify(transformed)
-            ? "PASS: object input serialized and cloned"
-            : "FAIL: object input serialization or cloning",
-        );
+        const input = { toJSON: () => transformed };
+        await executeTool(probe, input);
+        if (isPolyfill) {
+          log(
+            received === input
+              ? "PASS: polyfill preserves object input"
+              : "FAIL: polyfill changed object input",
+          );
+        } else {
+          log(
+            received !== transformed &&
+              (received as typeof transformed).nested !== transformed.nested &&
+              JSON.stringify(received) === JSON.stringify(transformed)
+              ? "PASS: object input serialized and cloned"
+              : "FAIL: object input serialization or cloning",
+          );
+        }
 
         const defaults: [string, () => Promise<unknown>][] = [
           ["omitted input", () => executeTool(probe)],
@@ -162,13 +171,29 @@ async function runSelfTest(log: (line: string) => void) {
 
         const circular: Record<string, unknown> = {};
         circular.self = circular;
+        const nonJsonInputs: [string, object][] = [
+          ["circular", circular],
+          ["BigInt", { value: BigInt(1) }],
+          ["toJSON undefined", { toJSON: () => undefined }],
+        ];
         const invalid: [string, () => Promise<unknown>][] = [
           ["undefined with options", () => executeTool(probe, undefined, {})],
           ["null", () => executeTool(probe, null as unknown as object)],
-          ["circular", () => executeTool(probe, circular)],
-          ["BigInt", () => executeTool(probe, { value: BigInt(1) })],
-          ["toJSON undefined", () => executeTool(probe, { toJSON: () => undefined })],
         ];
+        for (const [label, value] of nonJsonInputs) {
+          if (isPolyfill) {
+            const before = calls;
+            await executeTool(probe, value);
+            log(
+              calls === before + 1 && received === value
+                ? `PASS: polyfill preserves ${label} input`
+                : `FAIL: polyfill changed ${label} input`,
+            );
+          } else {
+            invalid.push([label, () => executeTool(probe, value)]);
+          }
+        }
+        const inputError = isPolyfill ? "UnknownError" : "TypeError";
         for (const [label, run] of invalid) {
           const before = calls;
           try {
@@ -176,8 +201,8 @@ async function runSelfTest(log: (line: string) => void) {
             log(`FAIL: ${label} input resolved`);
           } catch (err) {
             log(
-              errName(err) === "TypeError" && calls === before
-                ? `PASS: ${label} input rejects TypeError before handler`
+              errName(err) === inputError && calls === before
+                ? `PASS: ${label} input rejects ${inputError} before handler`
                 : `FAIL: ${label} input (${errName(err)}, handler calls: ${calls - before})`,
             );
           }
@@ -406,18 +431,14 @@ async function runSelfTest(log: (line: string) => void) {
  */
 function StatusPanel() {
   const { available } = useWebMCPStatus();
-  const [detection, setDetection] = useState<"native" | "polyfill" | "checking">(
-    "checking",
-  );
+  const [detection, setDetection] = useState<"native" | "polyfill" | "checking">("checking");
   const [toolchangeCount, setToolchangeCount] = useState(0);
 
   // Update detection once available
   useEffect(() => {
     if (available) {
       const mc = document.modelContext;
-      setDetection(
-        mc && "__isWebMCPPolyfill" in mc ? "polyfill" : "native",
-      );
+      setDetection(mc && "__isWebMCPPolyfill" in mc ? "polyfill" : "native");
     }
   }, [available]);
 
@@ -455,7 +476,8 @@ function SelfTestPanel() {
   const handleRunSelfTest = useCallback(() => {
     setSelftestOutput([]);
     void runSelfTest((line) => setSelftestOutput((lines) => [...lines, line])).catch(
-      (err: unknown) => setSelftestOutput((lines) => [...lines, `FAIL: self-test (${errName(err)})`]),
+      (err: unknown) =>
+        setSelftestOutput((lines) => [...lines, `FAIL: self-test (${errName(err)})`]),
     );
   }, []);
 
