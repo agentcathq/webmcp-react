@@ -92,7 +92,8 @@ Chrome 153.0.8007.0+ (and via the polyfill's `executeTool`) it aborts when the c
 cancels. When an aborted execution's handler rejects, the hook treats it as
 **cancellation**: `isExecuting` clears, but `state.error` stays untouched and `onError`
 does not fire. Unregistering a tool (unmount) does **not** cancel in-flight executions
-(Chrome 153.0.8008.0+ behavior).
+(Chrome 153.0.8008.0+ behavior). Native Chrome also announces starts and cancellations
+through the `toolactivated` and `toolcancel` events described under [Events](#events).
 
 ## Results: `CallToolResult`
 
@@ -128,6 +129,7 @@ When native WebMCP is unavailable, the provider installs a polyfill that exposes
 | 153 | `execute(input, { signal })`; unregistration no longer cancels in-flight executions (153.0.8008.0+) |
 | 154 | `RegisteredTool.inputSchema` is an object (was a JSON string) |
 | 155 | `executeTool` takes object inputs instead of JSON strings (155.0.8052.0+) |
+| 156 | `toolactivated` and `toolcancel` fire on `document.modelContext` instead of `window` (156.0.8076.0+) |
 
 Pass an object to `executeTool`, using `{}` for tools without arguments. When options
 are omitted or `undefined`, omitting input or passing `undefined` defaults to a fresh `{}`.
@@ -157,15 +159,27 @@ consumer code. This compatibility policy is separate from the deprecated testing
 
 The native API is detected by reading `document.modelContext` only; the polyfill marks itself with `__isWebMCPPolyfill` so native support short-circuits installation.
 
-### `toolchange` event
+### Events
 
-`document.modelContext` is an `EventTarget` that fires a bare `toolchange` event (no `detail`) whenever the set of registered tools changes (register or unregister). Notifications are microtask-batched. Both styles are supported:
+`document.modelContext` is an `EventTarget`. Three events are typed on it:
+
+| Event | Event type | Fires when |
+| --- | --- | --- |
+| `toolchange` | `Event` (no `detail`) | the set of registered tools changes (register or unregister). Notifications are microtask-batched. |
+| `toolactivated` | `ToolActivatedEvent` | native Chrome begins executing a tool through `executeTool` |
+| `toolcancel` | `ToolCancelEvent` | native Chrome cancels a pending execution, for example when the caller's `signal` aborts |
+
+`ToolActivatedEvent` and `ToolCancelEvent` extend `Event` with a `toolName` string. Both listener styles are supported, and `ModelContextEventMap` maps each event name to its event type:
 
 ```ts
 document.modelContext.addEventListener("toolchange", () => { /* ... */ });
-// or
-document.modelContext.ontoolchange = () => { /* ... */ };
+document.modelContext.addEventListener("toolactivated", ({ toolName }) => { /* ... */ });
+document.modelContext.ontoolcancel = ({ toolName }) => { /* ... */ };
 ```
+
+Chrome 156.0.8076.0 moved `toolactivated` and `toolcancel` from `window` to `document.modelContext`; on Chrome ≤155 they fire on `window`. Feature-detect with `"ontoolactivated" in document.modelContext`. Event names outside the map fall back to the plain `EventTarget` signature.
+
+The polyfill fires only `toolchange`. It does not dispatch `toolactivated` or `toolcancel`.
 
 ### `registerTool` rejection cases
 

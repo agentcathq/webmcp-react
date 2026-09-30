@@ -14,3 +14,4 @@ examples/nextjs/.next/
 src/**/*.js
 examples/*/src/**/*.js
 docs/plans/
+tsconfig.vitest-temp.json
