@@ -4,7 +4,7 @@ All notable changes to `webmcp-react` are documented here. The format is based o
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## 1.2.1
 
 ### Added
 
@@ -20,6 +20,7 @@ All notable changes to `webmcp-react` are documented here. The format is based o
 
 - The polyfill still fires only `toolchange`. `toolactivated` and `toolcancel` are dispatched
   by native Chrome; on Chrome ≤155 they fire on `window` rather than `document.modelContext`.
+- No extension changes: the bridge extension stays at 0.2.2 and `webmcp-server` at 0.2.0.
 
 ## 1.2.0
 
