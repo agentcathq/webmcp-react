@@ -4,6 +4,23 @@ All notable changes to `webmcp-react` are documented here. The format is based o
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Added
+
+- **`toolactivated` and `toolcancel` event types.** Chrome 156.0.8076.0 moves these events
+  from `window` to `document.modelContext` (WebMCP PR #245). `ModelContext` now declares
+  `ontoolactivated` / `ontoolcancel` and typed `addEventListener` / `removeEventListener`
+  overloads for them, with `toolchange` unchanged. Event names outside the map fall back
+  to the plain `EventTarget` signature instead of failing to compile.
+- New exported types: `ToolActivatedEvent`, `ToolCancelEvent` (both `Event` plus a `toolName`
+  string) and `ModelContextEventMap`.
+
+### Compatibility
+
+- The polyfill still fires only `toolchange`. `toolactivated` and `toolcancel` are dispatched
+  by native Chrome; on Chrome ≤155 they fire on `window` rather than `document.modelContext`.
+
 ## 1.2.0
 
 ### Added
