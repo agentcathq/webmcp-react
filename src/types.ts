@@ -74,8 +74,17 @@ export interface CallToolResult {
 }
 
 export interface ToolAnnotations {
+  /** The tool only reads data and has no side effects. */
   readOnlyHint?: boolean;
+  /** The tool's output may include content the page author doesn't control. */
   untrustedContentHint?: boolean;
+  /**
+   * Running the tool has significant real-world or irreversible effects, like booking a
+   * flight or sending money. Agents may ask the user to confirm before calling it.
+   */
+  consequentialHint?: boolean;
+  /** The tool is meant for debugging and developer tooling, not end users. */
+  debugging?: boolean;
 }
 
 export interface ToolDescriptor<TArgs = Record<string, unknown>> {

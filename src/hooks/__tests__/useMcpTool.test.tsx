@@ -237,7 +237,12 @@ describe("registration lifecycle", () => {
         name: "greet",
         title: "Greeter",
         description,
-        annotations: { readOnlyHint: true, untrustedContentHint: true },
+        annotations: {
+          readOnlyHint: true,
+          untrustedContentHint: true,
+          consequentialHint: true,
+          debugging: true,
+        },
         handler: () => ({ content: [{ type: "text", text: "hi" }] }),
       });
       return null;
@@ -263,7 +268,12 @@ describe("registration lifecycle", () => {
     await waitFor(() => expect(spy).toHaveBeenCalled());
     const descriptor = spy.mock.calls[0][0];
     expect(descriptor.title).toBe("Greeter");
-    expect(descriptor.annotations).toEqual({ readOnlyHint: true, untrustedContentHint: true });
+    expect(descriptor.annotations).toEqual({
+      readOnlyHint: true,
+      untrustedContentHint: true,
+      consequentialHint: true,
+      debugging: true,
+    });
   });
 
   it("removes tool on unmount", async () => {
