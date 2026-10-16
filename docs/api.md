@@ -195,3 +195,22 @@ The polyfill fires only `toolchange`. It does not dispatch `toolactivated` or `t
 An already-aborted `AbortSignal` also rejects: `registerTool` rejects with the signal's abort reason and skips registration, matching the WebMCP spec and native Chrome 152+. Validation errors take precedence — the aborted-signal check runs after the checks above.
 
 The hook routes these rejections into `state.error` and fires `onError`, except `AbortError` (lifecycle teardown), which is ignored.
+
+## TypeScript and `webmcp-types`
+
+Heads up: webmcp-react already declares `document.modelContext` globally (`registerTool`, `getTools`, `executeTool`, the events etc), so you don't need Google's [`webmcp-types`](https://github.com/webmachinelearning/webmcp-types) on top of it.
+
+If you do install both, things get a bit messy. webmcp-types declares the same property as `readonly` with its own `WebMCP.ModelContext` type, and TypeScript wants every declaration of a global property to be indentical. With `skipLibCheck` off you'll get TS2687 and TS2717 errors from the two `.d.ts` files. With it on (Vite and Next.js have it on by default) you won't see any errors, TypeScript just quietly picks whichever decleration it sees first.
+
+If you're using the `"types": ["webmcp-types"]` setup from their README, ours wins. Honestly the only reason to want theirs is if you're calling `document.modelContext.registerTool` directly and want handler args inferred from `inputSchema`. If thats you, create a `webmcp-types.d.ts` with `/// <reference types="webmcp-types" />` in it and put it first in `include`:
+
+```json
+{
+  "compilerOptions": { "skipLibCheck": true },
+  "include": ["webmcp-types.d.ts", "src"]
+}
+```
+
+This depends on file order so it's worth double checking if you move files around. Quick way to tell which one you got: `getTools` and `executeTool` are optional in our type but required in theirs.
+
+We're dropping our global declaration in 2.0, so after that the two packages should play nicely together.
