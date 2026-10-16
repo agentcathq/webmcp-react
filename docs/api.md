@@ -68,6 +68,8 @@ These are the only annotation fields supported. The classic MCP hints (`destruct
 
 `exposedTo?: string[]` lets you control cross-frame origin visibility. Each entry must be a parseable, potentially-trustworthy origin (e.g. `https://example.com`). Changing `exposedTo` re-registers the tool. Invalid origins cause registration to reject (see below).
 
+WebMCP is gated by the `tools` Permissions Policy feature, which defaults to `'self'`. A cross-origin iframe can't use `document.modelContext` at all unless the embedding page delegates it with `<iframe allow="tools">`.
+
 ### Return value
 
 ```tsx
@@ -84,6 +86,8 @@ const { state, execute, reset } = useMcpTool({ ... });
 | `reset()`              | `() => void`                          | Reset state to initial values      |
 
 `execute()` (the UI/direct path) throws if validation or handler logic fails. The agent/testing-shim path returns a `CallToolResult` with `isError: true` instead. Both paths update the same reactive state and fire the same `onSuccess`/`onError` callbacks.
+
+A handler that returns `isError: true` itself is a success as far as the hook is concerned: `state.lastResult` holds the result and `onSuccess` fires. Throw instead if you want `state.error` and `onError`.
 
 ### Cancellation
 

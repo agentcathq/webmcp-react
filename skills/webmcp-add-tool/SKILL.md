@@ -128,7 +128,7 @@ return {
   structuredContent: { key: "value", count: 42 },
 };
 
-// Error result (caught by the framework, but you can also return errors explicitly)
+// Error result built by hand (usually you just throw, see Errors below)
 return {
   content: [{ type: "text", text: "Something went wrong" }],
   isError: true,
@@ -139,6 +139,26 @@ return {
   content: [{ type: "image", data: base64String, mimeType: "image/png" }],
 };
 ```
+
+Keep results small. The agent reads all of it, `structuredContent` and base64 images included. Google's WebMCP guidance aims for about 1,500 characters. For long lists, take `page` and `page_size` inputs and return `total_count` instead of everything at once.
+
+If the tool changes what's on screen (navigates, opens a dialog, updates a list), wait for that update before returning so the agent sees the page in its new state.
+
+## Errors
+
+Throw when the tool can't do what was asked. The hook catches it, sets `state.error`, calls `onError`, and the agent gets an `isError` result with your message. Write the message for the agent and say what to do next:
+
+```tsx
+handler: async ({ code }) => {
+  const coupon = await findCoupon(code);
+  if (!coupon) {
+    throw new Error(`Coupon "${code}" is invalid or expired. Ask the user for another code.`);
+  }
+  // ...
+},
+```
+
+Returning `{ isError: true, ... }` yourself also reaches the agent as an error, but the hook treats it as a success: `state.lastResult` holds it and `onSuccess` fires, not `onError`. Use that only when you want to control the exact result, e.g. to add `structuredContent` like `{ retryable: true }`.
 
 ## Dynamic tools
 
@@ -194,20 +214,28 @@ function ProductPage({ product }) {
 }
 ```
 
-## Naming conventions
+## Names, descriptions and inputs
 
-- Tool names: `snake_case` (e.g., `search_catalog`, `delete_user`, `get_order_status`)
+- Tool names: `snake_case` (e.g., `search_catalog`, `delete_user`, `get_order_status`), ideally under 30 characters
 - Component names: PascalCase ending in `Tool` (e.g., `SearchCatalogTool`, `DeleteUserTool`)
-- Descriptions: start with a verb, be specific (e.g., "Search the product catalog by keyword" not "Search stuff")
+- Name the tool for what actually happens. `book_flight` books the flight. A tool that only opens the booking form is `start_booking`, and it isn't read-only because it changes the page.
+- One tool per capability. If two tools could both answer the same request, merge them or make the difference obvious.
+- Descriptions say what the tool does and when to pick it: "Search the product catalog by keyword or category. Use when the user wants to find or compare products." Not "Search stuff".
+- Don't list the inputs in the description, the schema already tells the agent. Leave out implementation details too (Redux, REST, cache invalidation).
+- Keep descriptions under about 500 characters and each `.describe()` under about 150.
+- Accept input the way the user says it. For dates, take "next Friday" as well as an ISO date and resolve it in the app; agents often get today's date or the timezone wrong.
+- Prefer names over internal IDs (`shipping: "express"`, not `shipping_id: 1`). IDs the agent got from another tool's result are fine.
 
 ## Checklist
 
 Before finishing, verify:
 
 - [ ] Tool name is unique across the app
-- [ ] Description clearly explains what the tool does (AI agents read this)
+- [ ] Description says what the tool does and when to use it (AI agents read this)
 - [ ] All input fields have `.describe()` for AI context
 - [ ] Handler returns `CallToolResult` with `content` array
+- [ ] Failures throw an error message that tells the agent what to do next
+- [ ] Results stay small, and long lists are paginated
 - [ ] Appropriate annotations are set
 - [ ] Component is rendered inside `<WebMCPProvider>`
 - [ ] For Next.js: file has `"use client"` directive
