@@ -41,7 +41,7 @@ Registers a tool on `document.modelContext`. Automatically unregisters on unmoun
 | `description` | `string`                        | Human-readable description (required, non-empty)               |
 | `input`       | `z.ZodObject`                   | Zod schema for inputs. Handler receives typed args             |
 | `output`      | `z.ZodObject`                   | Optional Zod schema for outputs (library extension; see below) |
-| `annotations` | `ToolAnnotations`               | Optional behavior hints (`readOnlyHint`, `untrustedContentHint`) |
+| `annotations` | `ToolAnnotations`               | Optional behavior hints (`readOnlyHint`, `untrustedContentHint`, `consequentialHint`, `debugging`) |
 | `exposedTo`   | `string[]`                      | Optional list of trustworthy origins this tool is exposed to across frames |
 | `handler`     | `(args, ctx) => CallToolResult \| Promise<CallToolResult>` | Tool implementation. Receives the parsed input and `ctx: { signal: AbortSignal }`; the signal aborts when the agent cancels the execution (Chrome 153+; otherwise a never-aborting substitute) |
 | `onSuccess`   | `(result) => void`              | Optional callback on success                                   |
@@ -57,8 +57,10 @@ Same as above, but replace `input` with `inputSchema: InputSchema` and (optional
 
 ```ts
 interface ToolAnnotations {
-  readOnlyHint?: boolean;
-  untrustedContentHint?: boolean;
+  readOnlyHint?: boolean;         // only reads data, no side effects
+  untrustedContentHint?: boolean; // output may include content you don't control
+  consequentialHint?: boolean;    // real-world or irreversible effects; agents may confirm with the user first
+  debugging?: boolean;            // meant for debugging and developer tooling, not end users
 }
 ```
 

@@ -4,6 +4,14 @@ All notable changes to `webmcp-react` are documented here. The format is based o
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Added
+
+- **`consequentialHint` and `debugging` annotations.** `ToolAnnotations` now covers all four
+  hints in the WebMCP spec. Passing either one to `useMcpTool` used to fail to type-check.
+  The polyfill already forwarded annotations as-is, so nothing changes at runtime.
+
 ## 1.2.1
 
 ### Added

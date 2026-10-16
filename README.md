@@ -143,7 +143,7 @@ useMcpTool({
 
 ### Title and annotations
 
-Give a tool a human-friendly display `title`, and describe its behavior to agents with `annotations`. The current WebMCP specification defines two annotations: `readOnlyHint` and `untrustedContentHint`.
+Give a tool a human-friendly display `title`, and describe its behavior to agents with `annotations`. The current WebMCP specification defines four annotations: `readOnlyHint`, `untrustedContentHint`, `consequentialHint` and `debugging`. Set `consequentialHint` on tools that do something hard to undo, like placing an order, so agents know to check with the user first.
 
 ```tsx
 useMcpTool({
