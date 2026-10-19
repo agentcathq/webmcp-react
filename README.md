@@ -219,6 +219,10 @@ useMcpTool({
 });
 ```
 
+### TypeScript
+
+`webmcp-react` already types `document.modelContext`, so theres no need to add Google's `webmcp-types` as well. The two packages declare the same global differently and clash if you install both, see [TypeScript and webmcp-types](./docs/api.md#typescript-and-webmcp-types) for details and a workaround.
+
 ### SSR
 
 The library works with Next.js, Remix, and any server-rendering framework. The build includes a `"use client"` banner, so no extra configuration is needed.

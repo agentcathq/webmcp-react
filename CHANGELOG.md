@@ -12,6 +12,12 @@ All notable changes to `webmcp-react` are documented here. The format is based o
   hints in the WebMCP spec. Passing either one to `useMcpTool` used to fail to type-check.
   The polyfill already forwarded annotations as-is, so nothing changes at runtime.
 
+### Deprecated
+
+- **Global `Document.modelContext` type.** Clashes with Google's `webmcp-types`, which
+  declares the same global differently. It'll be removed in 2.0.0. Until then see
+  "TypeScript and webmcp-types" in `docs/api.md`.
+
 ## 1.2.1
 
 ### Added
