@@ -41,7 +41,7 @@ Registers a tool on `document.modelContext`. Automatically unregisters on unmoun
 | `description` | `string`                        | Human-readable description (required, non-empty)               |
 | `input`       | `z.ZodObject`                   | Zod schema for inputs. Handler receives typed args             |
 | `output`      | `z.ZodObject`                   | Optional Zod schema for outputs (library extension; see below) |
-| `annotations` | `ToolAnnotations`               | Optional behavior hints (`readOnlyHint`, `untrustedContentHint`) |
+| `annotations` | `ToolAnnotations`               | Optional behavior hints (`readOnlyHint`, `untrustedContentHint`, `consequentialHint`, `debugging`) |
 | `exposedTo`   | `string[]`                      | Optional list of trustworthy origins this tool is exposed to across frames |
 | `handler`     | `(args, ctx) => CallToolResult \| Promise<CallToolResult>` | Tool implementation. Receives the parsed input and `ctx: { signal: AbortSignal }`; the signal aborts when the agent cancels the execution (Chrome 153+; otherwise a never-aborting substitute) |
 | `onSuccess`   | `(result) => void`              | Optional callback on success                                   |
@@ -57,8 +57,10 @@ Same as above, but replace `input` with `inputSchema: InputSchema` and (optional
 
 ```ts
 interface ToolAnnotations {
-  readOnlyHint?: boolean;
-  untrustedContentHint?: boolean;
+  readOnlyHint?: boolean;         // only reads data, no side effects
+  untrustedContentHint?: boolean; // output may include content you don't control
+  consequentialHint?: boolean;    // real-world or irreversible effects; agents may confirm with the user first
+  debugging?: boolean;            // meant for debugging and developer tooling, not end users
 }
 ```
 
@@ -67,6 +69,8 @@ These are the only annotation fields supported. The classic MCP hints (`destruct
 ### `exposedTo`
 
 `exposedTo?: string[]` lets you control cross-frame origin visibility. Each entry must be a parseable, potentially-trustworthy origin (e.g. `https://example.com`). Changing `exposedTo` re-registers the tool. Invalid origins cause registration to reject (see below).
+
+WebMCP is gated by the `tools` Permissions Policy feature, which defaults to `'self'`. A cross-origin iframe can't use `document.modelContext` at all unless the embedding page delegates it with `<iframe allow="tools">`.
 
 ### Return value
 
@@ -84,6 +88,8 @@ const { state, execute, reset } = useMcpTool({ ... });
 | `reset()`              | `() => void`                          | Reset state to initial values      |
 
 `execute()` (the UI/direct path) throws if validation or handler logic fails. The agent/testing-shim path returns a `CallToolResult` with `isError: true` instead. Both paths update the same reactive state and fire the same `onSuccess`/`onError` callbacks.
+
+A handler that returns `isError: true` itself is a success as far as the hook is concerned: `state.lastResult` holds the result and `onSuccess` fires. Throw instead if you want `state.error` and `onError`.
 
 ### Cancellation
 

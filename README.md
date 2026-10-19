@@ -95,6 +95,10 @@ Agents with built-in WebMCP browser support, such as Codex, discover and call to
 
 The extension will be deprecated when Chrome provides native bridging to desktop clients.
 
+### Testing in Chrome
+
+Google's [WebMCP extension](https://github.com/GoogleChromeLabs/webmcp-extension) lists a page's tools and runs an agent against them from a side panel, which is handy while building tools. It only sees tools registered through Chrome's native API, so on a page running the polyfill it finds nothing. Turn on `chrome://flags/#enable-webmcp-testing` (the extension needs Chrome 155 or newer) and `<WebMCPProvider>` will use the native API instead of the polyfill.
+
 ## Usage
 
 ### Execution state
@@ -143,7 +147,7 @@ useMcpTool({
 
 ### Title and annotations
 
-Give a tool a human-friendly display `title`, and describe its behavior to agents with `annotations`. The current WebMCP specification defines two annotations: `readOnlyHint` and `untrustedContentHint`.
+Give a tool a human-friendly display `title`, and describe its behavior to agents with `annotations`. The current WebMCP specification defines four annotations: `readOnlyHint`, `untrustedContentHint`, `consequentialHint` and `debugging`. Set `consequentialHint` on tools that do something hard to undo, like placing an order, so agents know to check with the user first.
 
 ```tsx
 useMcpTool({
@@ -187,6 +191,8 @@ useMcpTool({
   onError: (error) => toast.error(error.message),
 });
 ```
+
+`onError` fires when the handler throws. A handler that returns `{ isError: true }` on its own still counts as a success, so `onSuccess` fires for it.
 
 ### JSON Schema
 

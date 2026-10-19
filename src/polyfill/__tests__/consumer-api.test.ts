@@ -85,6 +85,15 @@ describe("document.modelContext.getTools (polyfill)", () => {
     expect(tool.annotations).toEqual({ readOnlyHint: true });
   });
 
+  it("passes consequentialHint and debugging through to getTools()", async () => {
+    installPolyfill();
+    await mc().registerTool(
+      makeTool({ annotations: { consequentialHint: true, debugging: true } }),
+    );
+    const [tool] = await mc().getTools();
+    expect(tool.annotations).toEqual({ consequentialHint: true, debugging: true });
+  });
+
   it("rejects SecurityError for an untrustworthy fromOrigins entry", async () => {
     installPolyfill();
     await expect(mc().getTools({ fromOrigins: ["http://evil.example"] })).rejects.toThrow(

@@ -6,6 +6,12 @@ All notable changes to `webmcp-react` are documented here. The format is based o
 
 ## Unreleased
 
+### Added
+
+- **`consequentialHint` and `debugging` annotations.** `ToolAnnotations` now covers all four
+  hints in the WebMCP spec. Passing either one to `useMcpTool` used to fail to type-check.
+  The polyfill already forwarded annotations as-is, so nothing changes at runtime.
+
 ### Deprecated
 
 - **Global `Document.modelContext` type.** Clashes with Google's `webmcp-types`, which
