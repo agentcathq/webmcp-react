@@ -10,6 +10,7 @@ import type {
   CallToolResult,
   McpToolConfigJsonSchema,
   McpToolConfigZod,
+  ModelContext,
   ToolDescriptor,
 } from "../../types";
 import { _resetWarnings } from "../../utils/warn";
@@ -236,7 +237,12 @@ describe("registration lifecycle", () => {
         name: "greet",
         title: "Greeter",
         description,
-        annotations: { readOnlyHint: true, untrustedContentHint: true },
+        annotations: {
+          readOnlyHint: true,
+          untrustedContentHint: true,
+          consequentialHint: true,
+          debugging: true,
+        },
         handler: () => ({ content: [{ type: "text", text: "hi" }] }),
       });
       return null;
@@ -262,7 +268,12 @@ describe("registration lifecycle", () => {
     await waitFor(() => expect(spy).toHaveBeenCalled());
     const descriptor = spy.mock.calls[0][0];
     expect(descriptor.title).toBe("Greeter");
-    expect(descriptor.annotations).toEqual({ readOnlyHint: true, untrustedContentHint: true });
+    expect(descriptor.annotations).toEqual({
+      readOnlyHint: true,
+      untrustedContentHint: true,
+      consequentialHint: true,
+      debugging: true,
+    });
   });
 
   it("removes tool on unmount", async () => {
@@ -1290,6 +1301,145 @@ describe("registration error routing + ownership", () => {
     const tools = navigator.modelContextTesting?.listTools() ?? [];
     expect(tools.filter((t) => t.name === "shared")).toHaveLength(1);
     expect(winnerError).not.toHaveBeenCalled();
+  });
+});
+
+describe("consumer object inputs", () => {
+  async function getConsumer() {
+    await waitFor(async () => {
+      expect(await document.modelContext?.getTools?.()).toHaveLength(1);
+    });
+    const mc = document.modelContext as ModelContext &
+      Required<Pick<ModelContext, "getTools" | "executeTool">>;
+    const [tool] = await mc.getTools();
+    return { mc, tool };
+  }
+
+  it.each([
+    "direct",
+    "consumer",
+  ])("updates state and callbacks through %s execution in StrictMode", async (path) => {
+    const onSuccess = vi.fn();
+    const executeRef = { current: null as ExecuteFn | null };
+    const view = renderWithProvider(
+      <StrictMode>
+        <ToolComponent
+          config={{
+            name: "greet",
+            description: "Say hello",
+            input: z.object({ name: z.string() }),
+            handler: ({ name }) => makeResult(`hello ${name}`),
+            onSuccess,
+          }}
+          onExecuteRef={executeRef}
+        />
+      </StrictMode>,
+    );
+    const { mc, tool } = await getConsumer();
+    await act(async () => {
+      if (path === "direct") {
+        expect(await executeRef.current?.({ name: "world" })).toEqual(makeResult("hello world"));
+      } else {
+        const raw = await mc.executeTool(tool, { name: "world" });
+        expect(JSON.parse(raw as string)).toEqual(makeResult("hello world"));
+      }
+    });
+    expect(view.getByTestId("count").textContent).toBe("1");
+    expect(view.getByTestId("result").textContent).toBe("hello world");
+    expect(view.getByTestId("executing").textContent).toBe("no");
+    expect(onSuccess).toHaveBeenCalledExactlyOnceWith(makeResult("hello world"));
+  });
+
+  it.each(["direct", "consumer"])("preserves non-JSON input through %s execution", async (path) => {
+    const input = { date: new Date("2026-01-01T00:00:00Z"), value: 1n };
+    const handler = vi.fn((args) => {
+      expect(args).toBe(input);
+      return makeResult(`${args.date.getUTCFullYear()}: ${args.value}`);
+    });
+    const onSuccess = vi.fn();
+    const executeRef = { current: null as ExecuteFn | null };
+    const view = renderWithProvider(
+      <StrictMode>
+        <ToolComponent
+          config={{ name: "inspect", description: "Inspect input", handler, onSuccess }}
+          onExecuteRef={executeRef}
+        />
+      </StrictMode>,
+    );
+    const { mc, tool } = await getConsumer();
+    await act(async () => {
+      if (path === "direct") {
+        expect(await executeRef.current?.(input)).toEqual(makeResult("2026: 1"));
+      } else {
+        expect(JSON.parse((await mc.executeTool(tool, input)) as string)).toEqual(
+          makeResult("2026: 1"),
+        );
+      }
+    });
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(onSuccess).toHaveBeenCalledExactlyOnceWith(makeResult("2026: 1"));
+    expect(view.getByTestId("count").textContent).toBe("1");
+    expect(view.getByTestId("result").textContent).toBe("2026: 1");
+  });
+
+  it("rejects invalid consumer input without changing hook state or callbacks", async () => {
+    const handler = vi.fn(() => OK_RESULT);
+    const onSuccess = vi.fn();
+    const onError = vi.fn();
+    const view = renderWithProvider(
+      <ToolComponent
+        config={{ name: "greet", description: "Say hello", handler, onSuccess, onError }}
+      />,
+    );
+    const { mc, tool } = await getConsumer();
+    await act(async () => {
+      await expect(mc.executeTool(tool, null as unknown as object)).rejects.toMatchObject({
+        name: "UnknownError",
+      });
+    });
+    expect(handler).not.toHaveBeenCalled();
+    expect(onSuccess).not.toHaveBeenCalled();
+    expect(onError).not.toHaveBeenCalled();
+    expect(view.getByTestId("count").textContent).toBe("0");
+    expect(view.getByTestId("executing").textContent).toBe("no");
+    expect(view.getByTestId("error").textContent).toBe("none");
+    expect(view.getByTestId("result").textContent).toBe("null");
+  });
+
+  it("cancels an object-input consumer call without reporting a hook error", async () => {
+    const onError = vi.fn();
+    const onSuccess = vi.fn();
+    const view = renderWithProvider(
+      <ToolComponent
+        config={{
+          name: "wait",
+          description: "Wait for cancellation",
+          handler: (_args, { signal }) =>
+            new Promise<CallToolResult>((_resolve, reject) => {
+              signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+            }),
+          onError,
+          onSuccess,
+        }}
+      />,
+    );
+    const { mc, tool } = await getConsumer();
+    const controller = new AbortController();
+    let pending!: Promise<string | null>;
+    act(() => {
+      pending = mc.executeTool(tool, {}, { signal: controller.signal });
+    });
+    expect(view.getByTestId("executing").textContent).toBe("yes");
+    const reason = new Error("cancelled");
+    await act(async () => {
+      controller.abort(reason);
+      await expect(pending).rejects.toBe(reason);
+    });
+    expect(view.getByTestId("executing").textContent).toBe("no");
+    expect(view.getByTestId("error").textContent).toBe("none");
+    expect(view.getByTestId("count").textContent).toBe("0");
+    expect(onError).not.toHaveBeenCalled();
+    expect(onSuccess).not.toHaveBeenCalled();
   });
 });
 

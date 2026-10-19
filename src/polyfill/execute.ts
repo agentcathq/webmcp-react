@@ -10,19 +10,13 @@ function serializeResult(result: unknown): string {
 }
 
 /**
- * Execute a registered tool the way native Chrome does (152–154 behavior):
- * JSON-string or object input, per-execution AbortSignal forwarded to the
- * tool, caller abort rejects with the caller signal's reason while the
- * tool-side signal aborts with a generic AbortError, late settlement after
- * abort is ignored, and results serialize to a string (objects via JSON,
- * primitives via String, empty string → "Operation succeeded").
- *
- * Deviation from native: input is validated against the tool's inputSchema
- * (OperationError) — Chrome does not validate yet (spec issue #92).
+ * Execute with object or JSON-string inputs and a per-execution AbortSignal.
+ * Object inputs are passed by reference. Unlike native Chrome, the polyfill
+ * validates input against inputSchema (OperationError; spec issue #92).
  */
 export function runTool(
   tool: ToolDescriptor,
-  inputArguments: string | object,
+  inputArguments?: string | object,
   callerSignal?: AbortSignal,
 ): Promise<string> {
   if (callerSignal?.aborted) {
@@ -39,6 +33,7 @@ export function runTool(
   } else {
     parsed = inputArguments;
   }
+
   if (typeof parsed !== "object" || parsed === null) {
     return Promise.reject(
       new DOMException("Input arguments must be a JSON object", "UnknownError"),

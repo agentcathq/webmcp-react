@@ -59,14 +59,15 @@ class PolyfillModelContext extends EventTarget {
 
   executeTool(
     tool: RegisteredTool,
-    inputArguments: string | object,
+    inputArguments?: string | object,
     options?: ExecuteToolOptions,
   ): Promise<string | null> {
     const registered = tool ? this.#registry.get(tool.name) : undefined;
     if (!registered) {
       return Promise.reject(new DOMException(`Tool "${tool?.name}" not found`, "UnknownError"));
     }
-    return runTool(registered, inputArguments, options?.signal);
+    const input = inputArguments === undefined && options === undefined ? {} : inputArguments;
+    return runTool(registered, input, options?.signal);
   }
 
   get ontoolchange(): ((ev: Event) => unknown) | null {

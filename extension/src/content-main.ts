@@ -43,18 +43,29 @@ function createModelContextApi(mc: PageModelContext): PageToolApi {
       }));
     },
     async execute(toolName, argsJson, signal) {
+      const input = JSON.parse(argsJson);
+      if (input === null || typeof input !== "object") {
+        throw new TypeError("Input JSON must be an object");
+      }
+      // Force legacy DOMString conversion to fail parsing before execution.
+      // Object-input APIs serialize JSON, which ignores symbol properties.
+      Object.defineProperty(input, Symbol.toPrimitive, { value: () => "[object Object]" });
       const tools = await getTools();
       const tool = tools.find((t: PageRegisteredTool) => t.name === toolName);
       if (!tool) throw new Error(`Tool "${toolName}" not found`);
       try {
-        return await executeTool(tool, argsJson, { signal });
+        return await executeTool(tool, input, { signal });
       } catch (err) {
-        // Future Chrome may take an object instead of a JSON string. A
-        // TypeError here is argument conversion, so the tool never ran.
-        if (err instanceof TypeError) {
-          return await executeTool(tool, JSON.parse(argsJson) as object, { signal });
+        // Chrome <=154 parses a JSON string before starting the tool.
+        if (
+          signal.aborted ||
+          !(err instanceof DOMException) ||
+          err.name !== "UnknownError" ||
+          !err.message.startsWith("Failed to parse input")
+        ) {
+          throw err;
         }
-        throw err;
+        return await executeTool(tool, argsJson, { signal });
       }
     },
     onChange(callback) {

@@ -41,7 +41,7 @@ Registers a tool on `document.modelContext`. Automatically unregisters on unmoun
 | `description` | `string`                        | Human-readable description (required, non-empty)               |
 | `input`       | `z.ZodObject`                   | Zod schema for inputs. Handler receives typed args             |
 | `output`      | `z.ZodObject`                   | Optional Zod schema for outputs (library extension; see below) |
-| `annotations` | `ToolAnnotations`               | Optional behavior hints (`readOnlyHint`, `untrustedContentHint`) |
+| `annotations` | `ToolAnnotations`               | Optional behavior hints (`readOnlyHint`, `untrustedContentHint`, `consequentialHint`, `debugging`) |
 | `exposedTo`   | `string[]`                      | Optional list of trustworthy origins this tool is exposed to across frames |
 | `handler`     | `(args, ctx) => CallToolResult \| Promise<CallToolResult>` | Tool implementation. Receives the parsed input and `ctx: { signal: AbortSignal }`; the signal aborts when the agent cancels the execution (Chrome 153+; otherwise a never-aborting substitute) |
 | `onSuccess`   | `(result) => void`              | Optional callback on success                                   |
@@ -57,8 +57,10 @@ Same as above, but replace `input` with `inputSchema: InputSchema` and (optional
 
 ```ts
 interface ToolAnnotations {
-  readOnlyHint?: boolean;
-  untrustedContentHint?: boolean;
+  readOnlyHint?: boolean;         // only reads data, no side effects
+  untrustedContentHint?: boolean; // output may include content you don't control
+  consequentialHint?: boolean;    // real-world or irreversible effects; agents may confirm with the user first
+  debugging?: boolean;            // meant for debugging and developer tooling, not end users
 }
 ```
 
@@ -67,6 +69,8 @@ These are the only annotation fields supported. The classic MCP hints (`destruct
 ### `exposedTo`
 
 `exposedTo?: string[]` lets you control cross-frame origin visibility. Each entry must be a parseable, potentially-trustworthy origin (e.g. `https://example.com`). Changing `exposedTo` re-registers the tool. Invalid origins cause registration to reject (see below).
+
+WebMCP is gated by the `tools` Permissions Policy feature, which defaults to `'self'`. A cross-origin iframe can't use `document.modelContext` at all unless the embedding page delegates it with `<iframe allow="tools">`.
 
 ### Return value
 
@@ -85,6 +89,8 @@ const { state, execute, reset } = useMcpTool({ ... });
 
 `execute()` (the UI/direct path) throws if validation or handler logic fails. The agent/testing-shim path returns a `CallToolResult` with `isError: true` instead. Both paths update the same reactive state and fire the same `onSuccess`/`onError` callbacks.
 
+A handler that returns `isError: true` itself is a success as far as the hook is concerned: `state.lastResult` holds the result and `onSuccess` fires. Throw instead if you want `state.error` and `onError`.
+
 ### Cancellation
 
 Each execution gets its own `AbortSignal`, passed to the handler as `ctx.signal`. On
@@ -92,7 +98,8 @@ Chrome 153.0.8007.0+ (and via the polyfill's `executeTool`) it aborts when the c
 cancels. When an aborted execution's handler rejects, the hook treats it as
 **cancellation**: `isExecuting` clears, but `state.error` stays untouched and `onError`
 does not fire. Unregistering a tool (unmount) does **not** cancel in-flight executions
-(Chrome 153.0.8008.0+ behavior).
+(Chrome 153.0.8008.0+ behavior). Native Chrome also announces starts and cancellations
+through the `toolactivated` and `toolcancel` events described under [Events](#events).
 
 ## Results: `CallToolResult`
 
@@ -113,11 +120,11 @@ interface CallToolResult {
 When native WebMCP is unavailable, the provider installs a polyfill that exposes:
 
 - `document.modelContext` — the registration API (an `EventTarget`). `registerTool(tool, options?)` returns a `Promise<undefined>` that **rejects** on invalid input (see below). Unregistration is **AbortSignal-only** — pass `{ signal }` and abort it to remove the tool. There is no `unregisterTool`.
-- `document.modelContext.getTools(options?)` / `executeTool(tool, inputArguments, options?)`
-  — the consumer API (same shape as native Chrome). `getTools()` resolves sorted, fresh
+- `document.modelContext.getTools(options?)` / `executeTool(tool, inputArguments?, options?)`
+  — the consumer API. `getTools()` resolves sorted, fresh
   `RegisteredTool` objects whose `inputSchema` is a deep-copied **object**;
-  `executeTool` accepts a JSON string or object input, forwards `options.signal` into the
-  tool's execution signal, rejects `UnknownError` on failure, and — unlike native Chrome —
+  `executeTool` accepts object inputs by reference or parses JSON-string inputs,
+  forwards `options.signal` into the tool's execution signal, and — unlike native Chrome —
   validates input against `inputSchema` (`OperationError`).
 - `navigator.modelContextTesting` — **deprecated** wrapper over the same engine
   (`listTools()` keeps returning a JSON-string `inputSchema`); removed in 2.0.0.
@@ -127,18 +134,58 @@ When native WebMCP is unavailable, the provider installs a polyfill that exposes
 | ≤152 | `execute(input)` — no tool-side signal (the library substitutes one); `navigator.modelContextTesting` removed in 152.0.7940.0 |
 | 153 | `execute(input, { signal })`; unregistration no longer cancels in-flight executions (153.0.8008.0+) |
 | 154 | `RegisteredTool.inputSchema` is an object (was a JSON string) |
+| 155 | `executeTool` takes object inputs instead of JSON strings (155.0.8052.0+) |
+| 156 | `toolactivated` and `toolcancel` fire on `document.modelContext` instead of `window` (156.0.8076.0+) |
+
+Pass an object to `executeTool`, using `{}` for tools without arguments. When options
+are omitted or `undefined`, omitting input or passing `undefined` defaults to a fresh `{}`.
+When options are supplied (including `{}` or `null`), `undefined` input rejects; pass
+`{}` explicitly, for example `executeTool(tool, {}, { signal })`. The polyfill uses
+`UnknownError` for invalid inputs; native Chrome uses `TypeError` for non-object inputs.
+This does not change the React hook's `execute()` convenience, which defaults to `{}`.
+
+The 1.x polyfill preserves object inputs by reference. It does not JSON-serialize them
+or invoke `toJSON()`: nested objects, Dates, `undefined` properties, and other values
+reach the handler unchanged, subject to input schema validation. Handler mutations can
+therefore affect the caller's object. Invalid JSON strings and non-object inputs reject
+with `UnknownError`; schema violations reject with `OperationError`. An already-aborted
+execution rejects with the caller's abort reason before input parsing or validation.
+
+Native Chrome 155 instead JSON-serializes object inputs and passes an independent parsed
+copy to the handler. Nested `undefined` properties are omitted and `toJSON()` is applied.
+Circular references, BigInt values, and serialization returning `undefined` reject with
+`TypeError`; exceptions from serialization reject with the original exception. Use plain
+JSON-compatible objects for portable calls across native Chrome and the polyfill.
+
+For compatibility, the polyfill also accepts JSON-string inputs and preserves their
+existing parsing errors (`UnknownError`). Native Chrome through 154 requires strings;
+native Chrome 155.0.8052.0+ requires objects. Polyfill string support remains available in
+1.x and is planned for deprecation in 2.x, without removal in 2.x. Prefer objects for new
+consumer code. This compatibility policy is separate from the deprecated testing shim.
 
 The native API is detected by reading `document.modelContext` only; the polyfill marks itself with `__isWebMCPPolyfill` so native support short-circuits installation.
 
-### `toolchange` event
+### Events
 
-`document.modelContext` is an `EventTarget` that fires a bare `toolchange` event (no `detail`) whenever the set of registered tools changes (register or unregister). Notifications are microtask-batched. Both styles are supported:
+`document.modelContext` is an `EventTarget`. Three events are typed on it:
+
+| Event | Event type | Fires when |
+| --- | --- | --- |
+| `toolchange` | `Event` (no `detail`) | the set of registered tools changes (register or unregister). Notifications are microtask-batched. |
+| `toolactivated` | `ToolActivatedEvent` | native Chrome begins executing a tool through `executeTool` |
+| `toolcancel` | `ToolCancelEvent` | native Chrome cancels a pending execution, for example when the caller's `signal` aborts |
+
+`ToolActivatedEvent` and `ToolCancelEvent` extend `Event` with a `toolName` string. Both listener styles are supported, and `ModelContextEventMap` maps each event name to its event type:
 
 ```ts
 document.modelContext.addEventListener("toolchange", () => { /* ... */ });
-// or
-document.modelContext.ontoolchange = () => { /* ... */ };
+document.modelContext.addEventListener("toolactivated", ({ toolName }) => { /* ... */ });
+document.modelContext.ontoolcancel = ({ toolName }) => { /* ... */ };
 ```
+
+Chrome 156.0.8076.0 moved `toolactivated` and `toolcancel` from `window` to `document.modelContext`; on Chrome ≤155 they fire on `window`. Feature-detect with `"ontoolactivated" in document.modelContext`. Event names outside the map fall back to the plain `EventTarget` signature.
+
+The polyfill fires only `toolchange`. It does not dispatch `toolactivated` or `toolcancel`.
 
 ### `registerTool` rejection cases
 
@@ -154,3 +201,22 @@ document.modelContext.ontoolchange = () => { /* ... */ };
 An already-aborted `AbortSignal` also rejects: `registerTool` rejects with the signal's abort reason and skips registration, matching the WebMCP spec and native Chrome 152+. Validation errors take precedence — the aborted-signal check runs after the checks above.
 
 The hook routes these rejections into `state.error` and fires `onError`, except `AbortError` (lifecycle teardown), which is ignored.
+
+## TypeScript and `webmcp-types`
+
+Heads up: webmcp-react already declares `document.modelContext` globally (`registerTool`, `getTools`, `executeTool`, the events etc), so you don't need Google's [`webmcp-types`](https://github.com/webmachinelearning/webmcp-types) on top of it.
+
+If you do install both, things get a bit messy. webmcp-types declares the same property as `readonly` with its own `WebMCP.ModelContext` type, and TypeScript wants every declaration of a global property to be indentical. With `skipLibCheck` off you'll get TS2687 and TS2717 errors from the two `.d.ts` files. With it on (Vite and Next.js have it on by default) you won't see any errors, TypeScript just quietly picks whichever decleration it sees first.
+
+If you're using the `"types": ["webmcp-types"]` setup from their README, ours wins. Honestly the only reason to want theirs is if you're calling `document.modelContext.registerTool` directly and want handler args inferred from `inputSchema`. If thats you, create a `webmcp-types.d.ts` with `/// <reference types="webmcp-types" />` in it and put it first in `include`:
+
+```json
+{
+  "compilerOptions": { "skipLibCheck": true },
+  "include": ["webmcp-types.d.ts", "src"]
+}
+```
+
+This depends on file order so it's worth double checking if you move files around. Quick way to tell which one you got: `getTools` and `executeTool` are optional in our type but required in theirs.
+
+We're dropping our global declaration in 2.0, so after that the two packages should play nicely together.

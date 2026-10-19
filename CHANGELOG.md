@@ -6,8 +6,56 @@ All notable changes to `webmcp-react` are documented here. The format is based o
 
 ## Unreleased
 
+### Added
+
+- **`consequentialHint` and `debugging` annotations.** `ToolAnnotations` now covers all four
+  hints in the WebMCP spec. Passing either one to `useMcpTool` used to fail to type-check.
+  The polyfill already forwarded annotations as-is, so nothing changes at runtime.
+
+### Deprecated
+
+- **Global `Document.modelContext` type.** Clashes with Google's `webmcp-types`, which
+  declares the same global differently. It'll be removed in 2.0.0. Until then see
+  "TypeScript and webmcp-types" in `docs/api.md`.
+
+## 1.2.1
+
+### Added
+
+- **`toolactivated` and `toolcancel` event types.** Chrome 156.0.8076.0 moves these events
+  from `window` to `document.modelContext` (WebMCP PR #245). `ModelContext` now declares
+  `ontoolactivated` / `ontoolcancel` and typed `addEventListener` / `removeEventListener`
+  overloads for them, with `toolchange` unchanged. Event names outside the map fall back
+  to the plain `EventTarget` signature instead of failing to compile.
+- New exported types: `ToolActivatedEvent`, `ToolCancelEvent` (both `Event` plus a `toolName`
+  string) and `ModelContextEventMap`.
+
+### Compatibility
+
+- The polyfill still fires only `toolchange`. `toolactivated` and `toolcancel` are dispatched
+  by native Chrome; on Chrome ≤155 they fire on `window` rather than `document.modelContext`.
+- No extension changes: the bridge extension stays at 0.2.2 and `webmcp-server` at 0.2.0.
+
+## 1.2.0
+
+### Added
+
+- The polyfill's `document.modelContext.executeTool()` defaults to a fresh `{}` when
+  both input and options are omitted or `undefined`. With supplied options, callers
+  must pass an object (`{}` for tools without arguments).
+
+### Compatibility
+
+- The 1.x polyfill continues to pass object inputs by reference, preserve input errors,
+  and check cancellation before input parsing or validation. Native Chrome 155.0.8052.0+
+  JSON-serializes object inputs instead; use plain JSON-compatible objects for portable calls.
+- Legacy JSON-string inputs remain supported by the polyfill in 1.x. Their deprecation
+  is planned for 2.x, without removal in 2.x. The React hook's `execute()` API is unchanged.
+
 ### Extension
 
+- Tool calls use object inputs on Chrome 155+ while retaining support for older native
+  JSON-string APIs and legacy polyfills. Input format detection does not retry user tools.
 - A tab no longer loses its tools on an in-app route change that only alters the URL
   fragment (hash routers). `tabs.onUpdated` reports such same-document navigations as
   `loading`, and the bridge purged the tab even though its content scripts never re-ran.
@@ -20,7 +68,7 @@ All notable changes to `webmcp-react` are documented here. The format is based o
 - A persisted domain whose host permission is gone (for example after a reinstall) is
   dropped at startup instead of being reported as active while no content script can run
   on it. (#59)
-- Ships as bridge extension 0.2.1. `webmcp-server` is unchanged at 0.2.0.
+- Ships as bridge extension 0.2.2. `webmcp-server` is unchanged at 0.2.0.
 
 ## 1.1.0
 

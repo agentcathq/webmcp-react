@@ -80,6 +80,7 @@ mirrored — they share `runHandler` in `useMcpTool.ts` and `runTool` in
 
 - **Framework**: Vitest + React Testing Library + jsdom
 - **Location**: `__tests__/` directories adjacent to source files
+- **Type tests**: `*.test-d.ts` files in the same directories, checked by vitest's typecheck mode against `tsconfig.test.json`. Use them when changing the public types in `src/types.ts`
 - **StrictMode**: All tests must pass under React StrictMode (double-mount behavior)
 - **External-call path**: `document.modelContext.getTools()` / `executeTool()` is the consumer API — use it in tests to verify the full registration → execution → state update cycle. `navigator.modelContextTesting` (`polyfill/testing-shim.ts`) delegates to the same engine but is deprecated and is removed in 2.0.0; don't write new tests against it
 - **Coverage areas**: Registration lifecycle, execution state, error handling, input validation, SSR safety, StrictMode compatibility

@@ -32,10 +32,118 @@ describe("runTool", () => {
     expect(execute.mock.calls[0][0]).toEqual({ query: "hi" });
   });
 
-  it("accepts an object input without re-parsing", async () => {
+  it("accepts an object input", async () => {
     const execute = vi.fn(async () => OK);
     await runTool(makeTool({ execute }), { query: "hi" });
     expect(execute.mock.calls[0][0]).toEqual({ query: "hi" });
+  });
+
+  it("passes nested objects by reference", async () => {
+    const input = { nested: { value: "original" } };
+    const tool = makeTool({
+      inputSchema: undefined,
+      execute: (args) => {
+        expect(args).toBe(input);
+        (args.nested as { value: string }).value = "changed";
+        return OK;
+      },
+    });
+    await runTool(tool, input);
+    expect(input.nested.value).toBe("changed");
+  });
+
+  it("validates the original input without calling toJSON", async () => {
+    const toJSON = vi.fn(() => "hi");
+    const execute = vi.fn(async () => OK);
+    await expect(runTool(makeTool({ execute }), { query: { toJSON } })).rejects.toMatchObject({
+      name: "OperationError",
+    });
+    expect(toJSON).not.toHaveBeenCalled();
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["array", [1, 2]],
+    ["Date", { date: new Date("2026-01-01T00:00:00Z") }],
+    ["undefined and NaN", { omitted: undefined, values: [undefined, Number.NaN] }],
+    ["BigInt", { value: 1n }],
+    ["custom toJSON", { toJSON: () => ({ query: "hi" }) }],
+    ["undefined toJSON", { toJSON: () => undefined }],
+    ["primitive toJSON", { toJSON: () => 42 }],
+  ])("preserves %s input", async (_label, input) => {
+    const execute = vi.fn(async () => OK);
+    await runTool(makeTool({ inputSchema: undefined, execute }), input as object);
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(execute.mock.calls[0][0]).toBe(input);
+  });
+
+  it("accepts circular input", async () => {
+    const input: Record<string, unknown> = {};
+    input.self = input;
+    const execute = vi.fn(async () => OK);
+    await runTool(makeTool({ inputSchema: undefined, execute }), input);
+    expect(execute.mock.calls[0][0]).toBe(input);
+  });
+
+  it.each(["getter", "toJSON"])("does not invoke an unused input %s", async (kind) => {
+    const fail = vi.fn(() => {
+      throw new Error("cannot read input");
+    });
+    const input =
+      kind === "toJSON"
+        ? { toJSON: fail }
+        : Object.defineProperty({}, "query", { get: fail, enumerable: true });
+    const execute = vi.fn(async () => OK);
+    await expect(runTool(makeTool({ inputSchema: undefined, execute }), input)).resolves.toBe(
+      JSON.stringify(OK),
+    );
+    expect(execute.mock.calls[0][0]).toBe(input);
+    expect(fail).not.toHaveBeenCalled();
+  });
+
+  it("preserves an exception thrown by a getter during schema validation", async () => {
+    const reason = new Error("cannot read input");
+    const input = Object.defineProperty({}, "query", {
+      get() {
+        throw reason;
+      },
+      enumerable: true,
+    });
+    const execute = vi.fn(async () => OK);
+    await expect(runTool(makeTool({ execute }), input)).rejects.toBe(reason);
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["function", () => {}],
+    ["callable with toJSON", Object.assign(() => {}, { toJSON: () => ({ query: "hi" }) })],
+  ])("rejects a %s with UnknownError", async (_label, input) => {
+    const execute = vi.fn(async () => OK);
+    await expect(runTool(makeTool({ execute }), input as object)).rejects.toMatchObject({
+      name: "UnknownError",
+    });
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["invalid input", null],
+    ["schema violation", {}],
+    ["unserializable input", { value: 1n }],
+    [
+      "throwing toJSON",
+      {
+        toJSON() {
+          throw new Error("must not serialize");
+        },
+      },
+    ],
+  ])("checks cancellation before %s", async (_label, input) => {
+    const reason = new Error("cancelled");
+    const execute = vi.fn(async () => OK);
+    await expect(
+      runTool(makeTool({ execute }), input as object, AbortSignal.abort(reason)),
+    ).rejects.toBe(reason);
+    expect(execute).not.toHaveBeenCalled();
   });
 
   it("gives each execution an independent signal", async () => {
@@ -109,6 +217,14 @@ describe("runTool", () => {
     await expect(runTool(makeTool(), '{"query":"x"}', AbortSignal.abort(reason))).rejects.toBe(
       reason,
     );
+  });
+
+  it.each([
+    "not json",
+    "null",
+  ])("preserves the abort reason for pre-aborted legacy input %s", async (input) => {
+    const reason = new Error("cancelled");
+    await expect(runTool(makeTool(), input, AbortSignal.abort(reason))).rejects.toBe(reason);
   });
 
   it("mid-flight abort: caller gets caller's reason, tool gets a generic AbortError", async () => {

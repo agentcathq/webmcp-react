@@ -87,14 +87,30 @@ export function DevPanel() {
     const start = performance.now();
 
     try {
-      JSON.parse(inputValue); // validate
+      const input = JSON.parse(inputValue);
+      if (input === null || typeof input !== "object") {
+        throw new TypeError("Input JSON must be an object");
+      }
       const mc = document.modelContext;
       let raw: string | null;
       if (mc?.getTools && mc.executeTool) {
         const listed = await mc.getTools();
         const tool = listed.find((t) => t.name === selectedTool);
         if (!tool) throw new Error(`Tool "${selectedTool}" is no longer registered`);
-        raw = await mc.executeTool(tool, inputValue, { signal: controller.signal });
+        try {
+          raw = await mc.executeTool(tool, input, { signal: controller.signal });
+        } catch (err) {
+          // Chrome <=154 parses a JSON string before starting the tool.
+          if (
+            controller.signal.aborted ||
+            !(err instanceof DOMException) ||
+            err.name !== "UnknownError" ||
+            !err.message.startsWith("Failed to parse input")
+          ) {
+            throw err;
+          }
+          raw = await mc.executeTool(tool, inputValue, { signal: controller.signal });
+        }
       } else {
         raw = await (navigator as any).modelContextTesting.executeTool(selectedTool, inputValue, {
           signal: controller.signal,

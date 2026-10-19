@@ -74,8 +74,17 @@ export interface CallToolResult {
 }
 
 export interface ToolAnnotations {
+  /** The tool only reads data and has no side effects. */
   readOnlyHint?: boolean;
+  /** The tool's output may include content the page author doesn't control. */
   untrustedContentHint?: boolean;
+  /**
+   * Running the tool has significant real-world or irreversible effects, like booking a
+   * flight or sending money. Agents may ask the user to confirm before calling it.
+   */
+  consequentialHint?: boolean;
+  /** The tool is meant for debugging and developer tooling, not end users. */
+  debugging?: boolean;
 }
 
 export interface ToolDescriptor<TArgs = Record<string, unknown>> {
@@ -175,23 +184,55 @@ export interface ModelContextGetToolOptions {
   fromOrigins?: string[];
 }
 
+/** Fired at `document.modelContext` when a tool execution begins (Chrome 156.0.8076.0+). */
+export interface ToolActivatedEvent extends Event {
+  readonly toolName: string;
+}
+
+/** Fired at `document.modelContext` when a pending tool execution is cancelled (Chrome 156.0.8076.0+). */
+export interface ToolCancelEvent extends Event {
+  readonly toolName: string;
+}
+
+export interface ModelContextEventMap {
+  toolchange: Event;
+  toolactivated: ToolActivatedEvent;
+  toolcancel: ToolCancelEvent;
+}
+
 export interface ModelContext extends EventTarget {
   registerTool(tool: ToolDescriptor, options?: RegisterToolOptions): Promise<undefined>;
   getTools?(options?: ModelContextGetToolOptions): Promise<RegisteredTool[]>;
+  /**
+   * Input defaults to {} only when input and options are omitted or undefined.
+   * Pass {} with options. JSON strings are a legacy polyfill extension.
+   */
   executeTool?(
     tool: RegisteredTool,
-    inputArguments: string | object,
+    inputArguments?: string | object,
     options?: ExecuteToolOptions,
   ): Promise<string | null>;
   ontoolchange: ((this: ModelContext, ev: Event) => unknown) | null;
-  addEventListener(
-    type: "toolchange",
-    listener: (ev: Event) => unknown,
+  ontoolactivated: ((this: ModelContext, ev: ToolActivatedEvent) => unknown) | null;
+  ontoolcancel: ((this: ModelContext, ev: ToolCancelEvent) => unknown) | null;
+  addEventListener<K extends keyof ModelContextEventMap>(
+    type: K,
+    listener: (ev: ModelContextEventMap[K]) => unknown,
     options?: boolean | AddEventListenerOptions,
   ): void;
+  addEventListener(
+    type: string,
+    listener: EventListenerOrEventListenerObject | null,
+    options?: boolean | AddEventListenerOptions,
+  ): void;
+  removeEventListener<K extends keyof ModelContextEventMap>(
+    type: K,
+    listener: (ev: ModelContextEventMap[K]) => unknown,
+    options?: boolean | EventListenerOptions,
+  ): void;
   removeEventListener(
-    type: "toolchange",
-    listener: (ev: Event) => unknown,
+    type: string,
+    listener: EventListenerOrEventListenerObject | null,
     options?: boolean | EventListenerOptions,
   ): void;
 }
