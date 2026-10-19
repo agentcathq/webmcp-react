@@ -97,11 +97,13 @@ useMcpTool({
   annotations: {
     readOnlyHint: true,                    // Tool only reads data, no side effects
     untrustedContentHint: true,            // Tool may return content from untrusted sources
+    consequentialHint: true,               // Tool has real-world or irreversible effects
+    debugging: true,                       // Tool is for developers, not end users
   },
 });
 ```
 
-`ToolAnnotations` is only `{ readOnlyHint?: boolean; untrustedContentHint?: boolean }`. There is no `title` inside `annotations` (it is a top-level field), and the older `destructiveHint`, `idempotentHint`, and `openWorldHint` hints no longer exist.
+`ToolAnnotations` is only `{ readOnlyHint?, untrustedContentHint?, consequentialHint?, debugging? }`, all booleans. There is no `title` inside `annotations` (it is a top-level field), and the older `destructiveHint`, `idempotentHint`, and `openWorldHint` hints no longer exist.
 
 **Guideline for choosing fields:**
 
@@ -111,6 +113,8 @@ useMcpTool({
 | Fetches/queries data, no side effects | `annotations: { readOnlyHint: true }` |
 | Returns content from untrusted sources (user input, external APIs) | `annotations: { untrustedContentHint: true }` |
 | Creates/updates/deletes data | omit `readOnlyHint` (a tool with side effects should not claim it is read-only) |
+| Does something hard to undo (payments, bookings, sending messages, permanent deletes) | `annotations: { consequentialHint: true }` |
+| Only useful to developers (state dumps, test helpers) | `annotations: { debugging: true }` |
 
 ## Return format
 
