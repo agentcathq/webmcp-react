@@ -4,6 +4,20 @@ All notable changes to `webmcp-react` are documented here. The format is based o
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.3.1
+
+### Security
+
+- **Dev and example dependencies patched.** tinypool, vite, zod, body-parser, and postcss move
+  past HIGH/CRITICAL advisories (#82). Only the build, tests, and examples used them; the
+  published package and its dependency ranges are unchanged.
+
+### Compatibility
+
+- 1.3.0 was never published to npm. Upgrading from 1.2.1 to 1.3.1 also brings in the 1.3.0
+  changes below.
+- No extension changes: the bridge extension stays at 0.2.2 and `webmcp-server` at 0.2.0.
+
 ## 1.3.0
 
 ### Added
