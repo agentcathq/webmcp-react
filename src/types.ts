@@ -175,6 +175,11 @@ export interface RegisteredTool {
   title?: string;
   description: string;
   inputSchema?: InputSchema | string;
+  /**
+   * JSON Schema for the value the tool's `execute` returns (Chrome 159.0.8140.0+).
+   * `null` on native Chrome and absent on the polyfill when the tool has none.
+   */
+  outputSchema?: InputSchema | null;
   annotations?: ToolAnnotations;
   window?: Window;
   origin?: string;

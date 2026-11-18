@@ -49,6 +49,9 @@ class PolyfillModelContext extends EventTarget {
             // the object from the schema captured at registration.
             inputSchema: JSON.parse(JSON.stringify(tool.inputSchema)) as InputSchema,
           }),
+          ...(tool.outputSchema && {
+            outputSchema: JSON.parse(JSON.stringify(tool.outputSchema)) as InputSchema,
+          }),
           ...(tool.annotations && { annotations: { ...tool.annotations } }),
           window,
           origin: location.origin,

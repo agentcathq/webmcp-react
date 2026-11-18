@@ -69,6 +69,25 @@ describe("document.modelContext.getTools (polyfill)", () => {
     expect(secondSchema.properties.query.type).toBe("string");
   });
 
+  it("returns a deep copy of outputSchema and omits it when not registered", async () => {
+    installPolyfill();
+    const outputSchema: InputSchema = {
+      type: "object",
+      properties: { temperature: { type: "number" } },
+      required: ["temperature"],
+    };
+    await mc().registerTool(makeTool({ name: "with_output", outputSchema }));
+    await mc().registerTool(makeTool({ name: "without_output" }));
+    const [withOutput, withoutOutput] = await mc().getTools();
+    expect(withOutput.outputSchema).toEqual(outputSchema);
+    expect(withOutput.outputSchema).not.toBe(outputSchema);
+    expect(withoutOutput).not.toHaveProperty("outputSchema");
+
+    (withOutput.outputSchema as InputSchema).type = "mutated";
+    const [again] = await mc().getTools();
+    expect(again.outputSchema?.type).toBe("object");
+  });
+
   it("returns fresh objects on every call", async () => {
     installPolyfill();
     await mc().registerTool(makeTool());

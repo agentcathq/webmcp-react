@@ -232,15 +232,18 @@ The library works with Next.js, Remix, and any server-rendering framework. The b
 | Environment | Behavior |
 | --- | --- |
 | Chrome with native `document.modelContext` | The library uses the native API. The polyfill is not installed. |
+| A page that already loaded another WebMCP polyfill, such as [`@w3c/webmcp-polyfill`](https://github.com/w3c-oss/webmcp-polyfill) | The library uses that polyfill as it would the native API. Its own polyfill is not installed. |
 | All other browsers | The library installs its polyfill, which implements the registration and consumer APIs. |
 
 The polyfill follows native Chrome behavior. See the [polyfill section of the API reference](./docs/api.md#polyfill-behavior) for the exact Chrome versions each behavior tracks.
+
+When `@w3c/webmcp-polyfill` is in use instead, a few things differ from this library's polyfill. JSON Schema tools get no input validation (Zod tools are still validated by the hook), `executeTool` accepts only object inputs, there is no `navigator.modelContextTesting`, and WebMCP is only available in secure contexts (HTTPS or localhost).
 
 ## Versioning and stability
 
 `webmcp-react` follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Breaking changes to the public API bump the major version. Every release is documented in the [changelog](./CHANGELOG.md), including the WebMCP specification and Chrome changes it tracks.
 
-`outputSchema` and `structuredContent` are documented library extensions to the WebMCP specification. They are part of the public API and follow the same versioning policy.
+`structuredContent`, and the `output` / `outputSchema` config that describes it, are documented library extensions to the WebMCP specification. They are part of the public API and follow the same versioning policy. The specification's own `outputSchema` describes the whole value a tool returns, so the library does not pass yours to the browser.
 
 ## API
 

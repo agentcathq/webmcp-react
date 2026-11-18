@@ -84,6 +84,16 @@ describe("createRegistry", () => {
     ).rejects.toBeInstanceOf(TypeError);
   });
 
+  it("rejects on non-serializable outputSchema with TypeError", async () => {
+    const registry = createRegistry();
+    const circular: Record<string, unknown> = { type: "object" };
+    circular.self = circular;
+    await expect(
+      registry.registerTool(makeTool({ outputSchema: circular as never })),
+    ).rejects.toThrow(new TypeError("Tool outputSchema is not JSON-serializable"));
+    expect(registry.getTools().size).toBe(0);
+  });
+
   it("rejects on a non-trustworthy exposedTo origin with SecurityError", async () => {
     const registry = createRegistry();
     await expect(

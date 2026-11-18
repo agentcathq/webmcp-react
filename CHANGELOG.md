@@ -4,6 +4,33 @@ All notable changes to `webmcp-react` are documented here. The format is based o
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.3.2
+
+### Fixed
+
+- **`output` / `outputSchema` is no longer passed to `registerTool`.** Chrome 159.0.8140.0
+  added `outputSchema` to the WebMCP API (WebMCP PR #254). There it describes the whole
+  value a tool's `execute` returns, which for this library is the `CallToolResult`
+  envelope, while the hook's `output` / `outputSchema` describes `structuredContent`.
+  Agents that check results against the schema would reject every call to a tool that
+  declared one. The hook keeps the schema to itself, so changing it no longer re-registers
+  the tool.
+
+### Added
+
+- **`outputSchema` in the polyfill.** For tools registered directly on
+  `document.modelContext`, `registerTool` rejects with a `TypeError` when `outputSchema`
+  can't be serialized to JSON, and `getTools()` returns a deep copy of it.
+  `RegisteredTool` gains `outputSchema?: InputSchema | null`; native Chrome reports `null`
+  for a tool registered without one.
+
+### Compatibility
+
+- A page that loads `@w3c/webmcp-polyfill` before `<WebMCPProvider>` mounts keeps working:
+  the provider treats it as the native API and does not install its own polyfill. The
+  README lists how it behaves differently.
+- No extension changes: the bridge extension stays at 0.2.2 and `webmcp-server` at 0.2.0.
+
 ## 1.3.1
 
 ### Security
