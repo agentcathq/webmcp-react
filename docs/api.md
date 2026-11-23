@@ -125,10 +125,14 @@ When native WebMCP is unavailable, the provider installs a polyfill that exposes
 - `document.modelContext.getTools(options?)` / `executeTool(tool, inputArguments?, options?)`
   — the consumer API. `getTools()` resolves sorted, fresh
   `RegisteredTool` objects whose `inputSchema` is a deep-copied **object** (as is
-  `outputSchema`, when a tool registered one directly on `document.modelContext`);
+  `outputSchema`, when a tool registered one directly on `document.modelContext`), plus
+  `source` and the deprecated `window`, both the page's `window`;
   `executeTool` accepts object inputs by reference or parses JSON-string inputs,
   forwards `options.signal` into the tool's execution signal, and — unlike native Chrome —
-  validates input against `inputSchema` (`OperationError`).
+  validates input against `inputSchema` (`OperationError`). An object returned by
+  `getTools()` runs only the registration it describes: once that tool is unregistered,
+  `executeTool` rejects with `UnknownError`, even if a tool with the same name has been
+  registered since. Other objects are still looked up by `name` in 1.x.
 - `navigator.modelContextTesting` — **deprecated** wrapper over the same engine
   (`listTools()` keeps returning a JSON-string `inputSchema`); removed in 2.0.0.
 
@@ -140,6 +144,12 @@ When native WebMCP is unavailable, the provider installs a polyfill that exposes
 | 155 | `executeTool` takes object inputs instead of JSON strings (155.0.8052.0+) |
 | 156 | `toolactivated` and `toolcancel` fire on `document.modelContext` instead of `window` (156.0.8076.0+) |
 | 159 | `registerTool` accepts an `outputSchema`, and `getTools()` returns it (159.0.8140.0+) |
+| 160 | `getTools()` returns `Tool` interface objects: `window` is renamed `source`, missing schemas and annotations are `null`, and `executeTool` runs only the registration a `Tool` describes (160.0.8173.0+) |
+
+On Chrome 160+, read a tool's fields directly (`tool.name`, `tool.inputSchema`, and so on).
+Spreading a `Tool` or passing it to `JSON.stringify` yields no fields, and `structuredClone`
+throws. Pass `executeTool` the object `getTools()` returned, not a copy, and read
+`tool.source ?? tool.window` to support older Chrome.
 
 Pass an object to `executeTool`, using `{}` for tools without arguments. When options
 are omitted or `undefined`, omitting input or passing `undefined` defaults to a fresh `{}`.

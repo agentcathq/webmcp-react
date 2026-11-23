@@ -169,6 +169,11 @@ export interface RegisterToolOptions {
  * `inputSchema` is an object on Chrome 154+ and this library's polyfill, but a
  * JSON string on Chrome <=153 — consumers must handle both:
  * `typeof s === "string" ? JSON.parse(s) : s`.
+ *
+ * On Chrome 160.0.8173.0+ these are `Tool` interface objects: read fields
+ * directly, since spreading one or passing it to `JSON.stringify` yields no
+ * fields. `executeTool` runs only the exact registration a returned object
+ * describes, and rejects once that registration is gone.
  */
 export interface RegisteredTool {
   name: string;
@@ -181,6 +186,13 @@ export interface RegisteredTool {
    */
   outputSchema?: InputSchema | null;
   annotations?: ToolAnnotations;
+  /**
+   * Window of the document that registered the tool (Chrome 160.0.8173.0+).
+   * `null` once that document is gone. Read `tool.source ?? tool.window` to
+   * support older Chrome.
+   */
+  source?: Window | null;
+  /** @deprecated Renamed `source` in Chrome 160.0.8173.0. */
   window?: Window;
   origin?: string;
 }

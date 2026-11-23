@@ -15,6 +15,11 @@ All notable changes to `webmcp-react` are documented here. The format is based o
   Agents that check results against the schema would reject every call to a tool that
   declared one. The hook keeps the schema to itself, so changing it no longer re-registers
   the tool.
+- **The polyfill's `executeTool` no longer runs a replaced tool.** Chrome 160.0.8173.0 ties
+  each `Tool` from `getTools()` to the registration it describes (WebMCP PR #348). The
+  polyfill now does the same: once that tool is unregistered, `executeTool` rejects with
+  `UnknownError` instead of running whatever is registered under the name now. Objects
+  that didn't come from `getTools()` are still looked up by `name`.
 
 ### Added
 
@@ -23,9 +28,21 @@ All notable changes to `webmcp-react` are documented here. The format is based o
   can't be serialized to JSON, and `getTools()` returns a deep copy of it.
   `RegisteredTool` gains `outputSchema?: InputSchema | null`; native Chrome reports `null`
   for a tool registered without one.
+- **`RegisteredTool.source`.** Chrome 160.0.8173.0 renames `window` to `source` and returns
+  `Tool` interface objects from `getTools()`. The type gains `source?: Window | null`, and
+  the polyfill returns both `source` and `window`.
+
+### Deprecated
+
+- **`RegisteredTool.window`.** Read `tool.source ?? tool.window` until Chrome 160 is the
+  oldest version you support.
 
 ### Compatibility
 
+- On Chrome 160+, missing `inputSchema` and `annotations` are `null` at runtime while
+  `RegisteredTool` still types them as optional. Typing them as nullable is planned for 2.0.0.
+  Read fields directly rather than spreading or `JSON.stringify`-ing a `Tool`, which
+  yields no fields there.
 - A page that loads `@w3c/webmcp-polyfill` before `<WebMCPProvider>` mounts keeps working:
   the provider treats it as the native API and does not install its own polyfill. The
   README lists how it behaves differently.

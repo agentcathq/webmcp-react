@@ -52,6 +52,7 @@ describe("document.modelContext.getTools (polyfill)", () => {
     expect(tools[0].title).toBe("");
     expect(tools[0].description).toBe("consumer test tool");
     expect(tools[0].origin).toBe(location.origin);
+    expect(tools[0].source).toBe(window);
     expect(tools[0].window).toBe(window);
   });
 
@@ -204,6 +205,57 @@ describe("document.modelContext.executeTool (polyfill)", () => {
     await expect(mc().executeTool(stale, "{}")).rejects.toThrow(
       expect.objectContaining({ name: "UnknownError" }),
     );
+  });
+
+  it("rejects a tool from getTools() once its registration is replaced (Chrome 160 parity)", async () => {
+    installPolyfill();
+    const first = new AbortController();
+    const firstExecute = vi.fn(async () => ({
+      content: [{ type: "text" as const, text: "first" }],
+    }));
+    await mc().registerTool(makeTool({ inputSchema: undefined, execute: firstExecute }), {
+      signal: first.signal,
+    });
+    const [stale] = await mc().getTools();
+
+    first.abort();
+    const secondExecute = vi.fn(async () => ({
+      content: [{ type: "text" as const, text: "second" }],
+    }));
+    await mc().registerTool(makeTool({ inputSchema: undefined, execute: secondExecute }));
+
+    await expect(mc().executeTool(stale, {})).rejects.toMatchObject({ name: "UnknownError" });
+    expect(firstExecute).not.toHaveBeenCalled();
+    expect(secondExecute).not.toHaveBeenCalled();
+
+    const [fresh] = await mc().getTools();
+    await expect(mc().executeTool(fresh, {})).resolves.toContain("second");
+    expect(secondExecute).toHaveBeenCalledTimes(1);
+  });
+
+  it("binds a tool from getTools() to its registration even if its name is changed", async () => {
+    installPolyfill();
+    const execute = vi.fn(async () => ({ content: [{ type: "text" as const, text: "a" }] }));
+    const otherExecute = vi.fn(async () => ({ content: [{ type: "text" as const, text: "b" }] }));
+    await mc().registerTool(makeTool({ name: "a_tool", inputSchema: undefined, execute }));
+    await mc().registerTool(
+      makeTool({ name: "b_tool", inputSchema: undefined, execute: otherExecute }),
+    );
+    const [aTool] = await mc().getTools();
+    aTool.name = "b_tool";
+
+    await mc().executeTool(aTool, {});
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(otherExecute).not.toHaveBeenCalled();
+  });
+
+  it("still runs a plain object naming a registered tool (1.x compatibility)", async () => {
+    installPolyfill();
+    const execute = vi.fn(async () => ({ content: [{ type: "text" as const, text: "ok" }] }));
+    await mc().registerTool(makeTool({ inputSchema: undefined, execute }));
+    const plain: RegisteredTool = { name: "consumer_tool", description: "consumer test tool" };
+    await mc().executeTool(plain, {});
+    expect(execute).toHaveBeenCalledTimes(1);
   });
 
   it("forwards the caller signal: tool-side signal aborts, caller gets its reason", async () => {
