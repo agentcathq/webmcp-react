@@ -32,6 +32,8 @@ const { available } = useWebMCPStatus();
 
 Registers a tool on `document.modelContext`. Automatically unregisters on unmount (via `AbortSignal` — there is no `unregisterTool`).
 
+Where the browser supports `document.modelContext.waitForToolsUntil()` (Chrome 160.0.8185.0+), each registration's promise is passed to it, so browser agents wait for it to settle before reading the page's tools. This covers tools swapped as routes mount and unmount. On first page load, React registers tools in effects, which can run after the point where agents stop waiting; see [WebMCP issue #328](https://github.com/webmachinelearning/webmcp/issues/328).
+
 ### Zod config
 
 | Field         | Type                            | Description                                                    |
@@ -40,7 +42,7 @@ Registers a tool on `document.modelContext`. Automatically unregisters on unmoun
 | `title`       | `string`                        | Optional human-friendly display title                          |
 | `description` | `string`                        | Human-readable description (required, non-empty)               |
 | `input`       | `z.ZodObject`                   | Zod schema for inputs. Handler receives typed args             |
-| `output`      | `z.ZodObject`                   | Optional Zod schema for outputs (library extension; see below) |
+| `output`      | `z.ZodObject`                   | Optional Zod schema for `structuredContent` (library extension, not sent to the browser; see [Results](#results-calltoolresult)) |
 | `annotations` | `ToolAnnotations`               | Optional behavior hints (`readOnlyHint`, `untrustedContentHint`, `consequentialHint`, `debugging`) |
 | `exposedTo`   | `string[]`                      | Optional list of trustworthy origins this tool is exposed to across frames |
 | `handler`     | `(args, ctx) => CallToolResult \| Promise<CallToolResult>` | Tool implementation. Receives the parsed input and `ctx: { signal: AbortSignal }`; the signal aborts when the agent cancels the execution (Chrome 153+; otherwise a never-aborting substitute) |
@@ -115,6 +117,8 @@ interface CallToolResult {
 
 `structuredContent` is a library extension for returning structured (machine-readable) output alongside the human-readable `content` blocks.
 
+The `output` (Zod) or `outputSchema` (JSON Schema) config describes `structuredContent`. The hook does not pass it to `registerTool`. In the WebMCP spec (Chrome 159.0.8140.0+), a tool's `outputSchema` describes the whole value `execute` returns, which here is the `CallToolResult` envelope, so agents that check results against it would reject every call. Changing it does not re-register the tool.
+
 ## Polyfill behavior
 
 When native WebMCP is unavailable, the provider installs a polyfill that exposes:
@@ -122,10 +126,18 @@ When native WebMCP is unavailable, the provider installs a polyfill that exposes
 - `document.modelContext` — the registration API (an `EventTarget`). `registerTool(tool, options?)` returns a `Promise<undefined>` that **rejects** on invalid input (see below). Unregistration is **AbortSignal-only** — pass `{ signal }` and abort it to remove the tool. There is no `unregisterTool`.
 - `document.modelContext.getTools(options?)` / `executeTool(tool, inputArguments?, options?)`
   — the consumer API. `getTools()` resolves sorted, fresh
-  `RegisteredTool` objects whose `inputSchema` is a deep-copied **object**;
+  `RegisteredTool` objects whose `inputSchema` is a deep-copied **object** (as is
+  `outputSchema`, when a tool registered one directly on `document.modelContext`), plus
+  `source` and the deprecated `window`, both the page's `window`;
   `executeTool` accepts object inputs by reference or parses JSON-string inputs,
   forwards `options.signal` into the tool's execution signal, and — unlike native Chrome —
-  validates input against `inputSchema` (`OperationError`).
+  validates input against `inputSchema` (`OperationError`). An object returned by
+  `getTools()` runs only the registration it describes: once that tool is unregistered,
+  `executeTool` rejects with `UnknownError`, even if a tool with the same name has been
+  registered since. Other objects are still looked up by `name` in 1.x.
+- `document.modelContext.waitForToolsUntil(promise)` — accepted so pages can call it
+  unconditionally. No agent reads the polyfill's readiness, so it only marks the promise's
+  rejection as handled; calling it without an argument throws `TypeError`.
 - `navigator.modelContextTesting` — **deprecated** wrapper over the same engine
   (`listTools()` keeps returning a JSON-string `inputSchema`); removed in 2.0.0.
 
@@ -136,6 +148,13 @@ When native WebMCP is unavailable, the provider installs a polyfill that exposes
 | 154 | `RegisteredTool.inputSchema` is an object (was a JSON string) |
 | 155 | `executeTool` takes object inputs instead of JSON strings (155.0.8052.0+) |
 | 156 | `toolactivated` and `toolcancel` fire on `document.modelContext` instead of `window` (156.0.8076.0+) |
+| 159 | `registerTool` accepts an `outputSchema`, and `getTools()` returns it (159.0.8140.0+) |
+| 160 | `getTools()` returns `Tool` interface objects: `window` is renamed `source`, missing schemas and annotations are `null`, and `executeTool` runs only the registration a `Tool` describes (160.0.8173.0+); `waitForToolsUntil(promise)` (160.0.8185.0+) |
+
+On Chrome 160+, read a tool's fields directly (`tool.name`, `tool.inputSchema`, and so on).
+Spreading a `Tool` or passing it to `JSON.stringify` yields no fields, and `structuredClone`
+throws. Pass `executeTool` the object `getTools()` returned, not a copy, and read
+`tool.source ?? tool.window` to support older Chrome.
 
 Pass an object to `executeTool`, using `{}` for tools without arguments. When options
 are omitted or `undefined`, omitting input or passing `undefined` defaults to a fresh `{}`.
@@ -163,7 +182,7 @@ native Chrome 155.0.8052.0+ requires objects. Polyfill string support remains av
 1.x and is planned for deprecation in 2.x, without removal in 2.x. Prefer objects for new
 consumer code. This compatibility policy is separate from the deprecated testing shim.
 
-The native API is detected by reading `document.modelContext` only; the polyfill marks itself with `__isWebMCPPolyfill` so native support short-circuits installation.
+The native API is detected by reading `document.modelContext` only; the polyfill marks itself with `__isWebMCPPolyfill` so native support short-circuits installation. Any other `document.modelContext` already on the page counts as native, including one installed by [`@w3c/webmcp-polyfill`](https://github.com/w3c-oss/webmcp-polyfill). The provider then uses it and does not install this polyfill.
 
 ### Events
 
@@ -195,7 +214,7 @@ The polyfill fires only `toolchange`. It does not dispatch `toolactivated` or `t
 - a duplicate name already registered;
 - an empty/missing description;
 - an `execute` that is not a function;
-- a non-serializable `inputSchema`;
+- a non-serializable `inputSchema` or `outputSchema`;
 - an `exposedTo` entry that is not a parseable, potentially-trustworthy origin.
 
 An already-aborted `AbortSignal` also rejects: `registerTool` rejects with the signal's abort reason and skips registration, matching the WebMCP spec and native Chrome 152+. Validation errors take precedence — the aborted-signal check runs after the checks above.
@@ -206,9 +225,11 @@ The hook routes these rejections into `state.error` and fires `onError`, except 
 
 Heads up: webmcp-react already declares `document.modelContext` globally (`registerTool`, `getTools`, `executeTool`, the events etc), so you don't need Google's [`webmcp-types`](https://github.com/webmachinelearning/webmcp-types) on top of it.
 
-If you do install both, things get a bit messy. webmcp-types declares the same property as `readonly` with its own `WebMCP.ModelContext` type, and TypeScript wants every declaration of a global property to be indentical. With `skipLibCheck` off you'll get TS2687 and TS2717 errors from the two `.d.ts` files. With it on (Vite and Next.js have it on by default) you won't see any errors, TypeScript just quietly picks whichever decleration it sees first.
+If you do install both, things get a bit messy. webmcp-types declares the same property as `readonly` with its own `WebMCP.ModelContext` type, and TypeScript wants every declaration of a global property to be identical. With `skipLibCheck` off you'll get TS2687 and TS2717 errors from the two `.d.ts` files. With it on (Vite and Next.js have it on by default) you won't see any errors, TypeScript just quietly picks whichever declaration it sees first.
 
-If you're using the `"types": ["webmcp-types"]` setup from their README, ours wins. Honestly the only reason to want theirs is if you're calling `document.modelContext.registerTool` directly and want handler args inferred from `inputSchema`. If thats you, create a `webmcp-types.d.ts` with `/// <reference types="webmcp-types" />` in it and put it first in `include`:
+[`@w3c/webmcp-polyfill`](https://github.com/w3c-oss/webmcp-polyfill) depends on webmcp-types, so importing it brings in their declaration too.
+
+If you're using the `"types": ["webmcp-types"]` setup from their README, ours wins. Honestly the only reason to want theirs is if you're calling `document.modelContext.registerTool` directly and want handler args inferred from `inputSchema`. If that's you, create a `webmcp-types.d.ts` with `/// <reference types="webmcp-types" />` in it and put it first in `include`:
 
 ```json
 {

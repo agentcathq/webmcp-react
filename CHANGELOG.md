@@ -4,6 +4,57 @@ All notable changes to `webmcp-react` are documented here. The format is based o
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.4.0
+
+### Fixed
+
+- **`output` / `outputSchema` is no longer passed to `registerTool`.** Chrome 159.0.8140.0
+  added `outputSchema` to the WebMCP API (WebMCP PR #254). There it describes the whole
+  value a tool's `execute` returns, which for this library is the `CallToolResult`
+  envelope, while the hook's `output` / `outputSchema` describes `structuredContent`.
+  Agents that check results against the schema would reject every call to a tool that
+  declared one. The hook keeps the schema to itself, so changing it no longer re-registers
+  the tool.
+- **The polyfill's `executeTool` no longer runs a replaced tool.** Chrome 160.0.8173.0 ties
+  each `Tool` from `getTools()` to the registration it describes (WebMCP PR #348). The
+  polyfill now does the same: once that tool is unregistered, `executeTool` rejects with
+  `UnknownError` instead of running whatever is registered under the name now. Objects
+  that didn't come from `getTools()` are still looked up by `name`.
+
+### Added
+
+- **`outputSchema` in the polyfill.** For tools registered directly on
+  `document.modelContext`, `registerTool` rejects with a `TypeError` when `outputSchema`
+  can't be serialized to JSON, and `getTools()` returns a deep copy of it.
+  `RegisteredTool` gains `outputSchema?: InputSchema | null`; native Chrome reports `null`
+  for a tool registered without one.
+- **`RegisteredTool.source`.** Chrome 160.0.8173.0 renames `window` to `source` and returns
+  `Tool` interface objects from `getTools()`. The type gains `source?: Window | null`, and
+  the polyfill returns both `source` and `window`.
+
+- **`waitForToolsUntil()` support.** Chrome 160.0.8185.0 adds
+  `document.modelContext.waitForToolsUntil(promise)` (WebMCP PR #373), which tells browser
+  agents to wait for the page's tools. `useMcpTool` passes each registration's promise to
+  it when the browser has it, so agents don't read a half-updated set while tools are
+  swapped. `ModelContext` declares the optional method, and the polyfill implements it as a
+  no-op.
+
+### Deprecated
+
+- **`RegisteredTool.window`.** Read `tool.source ?? tool.window` until Chrome 160 is the
+  oldest version you support.
+
+### Compatibility
+
+- On Chrome 160+, missing `inputSchema` and `annotations` are `null` at runtime while
+  `RegisteredTool` still types them as optional. Typing them as nullable is planned for 2.0.0.
+  Read fields directly rather than spreading or `JSON.stringify`-ing a `Tool`, which
+  yields no fields there.
+- A page that loads `@w3c/webmcp-polyfill` before `<WebMCPProvider>` mounts keeps working:
+  the provider treats it as the native API and does not install its own polyfill. The
+  README lists how it behaves differently.
+- No extension changes: the bridge extension stays at 0.2.2 and `webmcp-server` at 0.2.0.
+
 ## 1.3.1
 
 ### Security

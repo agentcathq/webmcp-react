@@ -177,7 +177,7 @@ describe("registration lifecycle", () => {
     expect(tools[0].name).toBe("greet");
   });
 
-  it("registers with annotations and output schema", async () => {
+  it("registers with annotations and leaves the output schema off the descriptor", async () => {
     const { rerender } = render(
       <WebMCPProvider name="test" version="1.0">
         <ToolComponent
@@ -227,8 +227,71 @@ describe("registration lifecycle", () => {
     expect(descriptor.annotations).toEqual({
       readOnlyHint: true,
     });
-    expect(descriptor.outputSchema).toBeDefined();
-    expect(descriptor.outputSchema?.properties?.greeting).toBeDefined();
+    // `output` describes structuredContent; the descriptor's outputSchema would
+    // describe the whole CallToolResult that execute returns.
+    expect(descriptor).not.toHaveProperty("outputSchema");
+  });
+
+  it("does not expose a JSON Schema outputSchema through getTools()", async () => {
+    renderWithProvider(
+      <ToolComponent
+        config={{
+          name: "weather",
+          description: "Current weather",
+          inputSchema: { type: "object", properties: { city: { type: "string" } } },
+          outputSchema: {
+            type: "object",
+            properties: { temperature: { type: "number" } },
+            required: ["temperature"],
+          },
+          handler: async () => ({
+            content: [{ type: "text", text: "21" }],
+            structuredContent: { temperature: 21 },
+          }),
+        }}
+      />,
+    );
+
+    await waitForRegistration();
+
+    const mc = document.modelContext as ModelContext;
+    const tools = (await mc.getTools?.()) ?? [];
+    expect(tools).toHaveLength(1);
+    expect(tools[0]).not.toHaveProperty("outputSchema");
+
+    const raw = await mc.executeTool?.(tools[0], { city: "Paris" });
+    expect(JSON.parse(raw ?? "null")).toEqual({
+      content: [{ type: "text", text: "21" }],
+      structuredContent: { temperature: 21 },
+    });
+  });
+
+  it("does not re-register when only the output schema changes", async () => {
+    function Tool({ greetingType }: { greetingType: "string" | "number" }) {
+      useMcpTool({
+        name: "greet",
+        description: "Say hello",
+        inputSchema: { type: "object", properties: {} },
+        outputSchema: { type: "object", properties: { greeting: { type: greetingType } } },
+        handler: async () => OK_RESULT,
+      });
+      return null;
+    }
+
+    const { rerender } = renderWithProvider(<Tool greetingType="string" />);
+    await waitForRegistration();
+
+    const mc = document.modelContext as ModelContext;
+    const spy = vi.spyOn(mc, "registerTool");
+
+    rerender(
+      <WebMCPProvider name="test" version="1.0">
+        <Tool greetingType="number" />
+      </WebMCPProvider>,
+    );
+    await act(async () => {});
+
+    expect(spy).not.toHaveBeenCalled();
   });
 
   it("forwards top-level title and narrowed annotations to the descriptor", async () => {
@@ -1705,7 +1768,7 @@ describe("execution signal", () => {
     return {
       captured,
       uninstall: () => {
-        delete (document as { modelContext?: unknown }).modelContext;
+        delete document.modelContext;
       },
     };
   }
@@ -1886,5 +1949,74 @@ describe("execution signal", () => {
     });
     expect(onError).toHaveBeenCalledTimes(1);
     expect(getByTestId("error").textContent).toBe("genuine failure");
+  });
+});
+
+// ─── waitForToolsUntil (Chrome 160.0.8185.0+) ────────────────────
+
+describe("waitForToolsUntil (Chrome 160.0.8185.0+)", () => {
+  function installNative(waitForToolsUntil: (promise: Promise<unknown>) => void) {
+    const registrations: Promise<undefined>[] = [];
+    const native = {
+      registerTool: () => {
+        const registration = Promise.resolve(undefined);
+        registrations.push(registration);
+        return registration;
+      },
+      waitForToolsUntil,
+    };
+    Object.defineProperty(document, "modelContext", {
+      value: native,
+      configurable: true,
+      enumerable: true,
+      writable: true,
+    });
+    return registrations;
+  }
+
+  afterEach(() => {
+    if (Object.getOwnPropertyDescriptor(document, "modelContext")) {
+      delete document.modelContext;
+    }
+  });
+
+  it("passes each registerTool promise to waitForToolsUntil", async () => {
+    const waitForToolsUntil = vi.fn();
+    const registrations = installNative(waitForToolsUntil);
+
+    renderWithProvider(
+      <>
+        <ToolComponent config={{ name: "a", description: "d", handler: async () => OK_RESULT }} />
+        <ToolComponent config={{ name: "b", description: "d", handler: async () => OK_RESULT }} />
+      </>,
+    );
+    await act(async () => {});
+
+    // The provider becoming available re-registers each tool, so count every call.
+    expect(registrations.length).toBeGreaterThanOrEqual(2);
+    expect(waitForToolsUntil).toHaveBeenCalledTimes(registrations.length);
+    for (const [index, registration] of registrations.entries()) {
+      expect(waitForToolsUntil.mock.calls[index][0]).toBe(registration);
+    }
+  });
+
+  it("ignores a throwing waitForToolsUntil without failing the registration", async () => {
+    const registrations = installNative(() => {
+      throw new Error("not ready");
+    });
+    const onError = vi.fn();
+    const onState = vi.fn<(state: ReturnType<typeof useMcpTool>["state"]) => void>();
+
+    renderWithProvider(
+      <ToolComponent
+        config={{ name: "a", description: "d", onError, handler: async () => OK_RESULT }}
+        onState={onState}
+      />,
+    );
+    await act(async () => {});
+
+    expect(registrations.length).toBeGreaterThanOrEqual(1);
+    expect(onError).not.toHaveBeenCalled();
+    expect(onState.mock.calls.at(-1)?.[0].error).toBeNull();
   });
 });

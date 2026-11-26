@@ -47,12 +47,13 @@ export function createRegistry(): RegistryInternal {
           new DOMException(`Tool "${tool.name}" is already registered`, "InvalidStateError"),
         );
       }
-      if (tool.inputSchema !== undefined) {
-        // Only rejects hard-fail serialization (cycles, BigInt); lossy cases (functions, undefined) are not caught.
+      // Only rejects hard-fail serialization (cycles, BigInt); lossy cases (functions, undefined) are not caught.
+      for (const key of ["inputSchema", "outputSchema"] as const) {
+        if (tool[key] === undefined) continue;
         try {
-          JSON.stringify(tool.inputSchema);
+          JSON.stringify(tool[key]);
         } catch {
-          return Promise.reject(new TypeError("Tool inputSchema is not JSON-serializable"));
+          return Promise.reject(new TypeError(`Tool ${key} is not JSON-serializable`));
         }
       }
       if (options?.exposedTo) {

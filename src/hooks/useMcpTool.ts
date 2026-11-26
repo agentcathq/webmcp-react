@@ -75,11 +75,6 @@ export function useMcpTool(config: McpToolConfigZod | McpToolConfigJsonSchema): 
       ? (config as McpToolConfigZod).input
       : (config as McpToolConfigJsonSchema).inputSchema,
   );
-  const outputFingerprint = schemaFingerprint(
-    isZodPath
-      ? (config as McpToolConfigZod).output
-      : (config as McpToolConfigJsonSchema).outputSchema,
-  );
   const annotationsFingerprint = config.annotations ? JSON.stringify(config.annotations) : "";
   const titleFingerprint = config.title ?? "";
   const exposedToFingerprint = config.exposedTo ? JSON.stringify(config.exposedTo) : "";
@@ -198,19 +193,15 @@ export function useMcpTool(config: McpToolConfigZod | McpToolConfigJsonSchema): 
       ? zodToInputSchema((cfg as McpToolConfigZod).input)
       : (cfg as McpToolConfigJsonSchema).inputSchema;
 
-    const zodOutput = zodPath ? (cfg as McpToolConfigZod).output : undefined;
-    const resolvedOutputSchema = zodPath
-      ? zodOutput
-        ? zodToInputSchema(zodOutput)
-        : undefined
-      : (cfg as McpToolConfigJsonSchema).outputSchema;
-
+    // The config's `output`/`outputSchema` describes `structuredContent`, while the
+    // WebMCP descriptor's `outputSchema` describes the whole value `execute` returns
+    // (a `CallToolResult`). It is not forwarded, so agents that validate results
+    // against `outputSchema` don't reject every call.
     const descriptor: ToolDescriptor = {
       name: cfg.name,
       ...(cfg.title && { title: cfg.title }),
       description: cfg.description,
       ...(resolvedInputSchema && { inputSchema: resolvedInputSchema }),
-      ...(resolvedOutputSchema && { outputSchema: resolvedOutputSchema }),
       ...(cfg.annotations && { annotations: cfg.annotations }),
       execute: (args: Record<string, unknown>, options?: ToolExecuteCallbackOptions) =>
         runHandler(args, options?.signal ?? new AbortController().signal, {
@@ -246,6 +237,13 @@ export function useMcpTool(config: McpToolConfigZod | McpToolConfigJsonSchema): 
       });
       if (result && typeof (result as { then?: unknown }).then === "function") {
         (result as Promise<unknown>).catch(handleRegistrationError);
+        // Agents wait for the registration to settle before reading tools
+        // (Chrome 160.0.8185.0+). A failure here never fails the registration.
+        try {
+          mc.waitForToolsUntil?.(result as Promise<unknown>);
+        } catch {
+          // Ignored: readiness is a hint to agents.
+        }
       }
     } catch (thrown) {
       handleRegistrationError(thrown);
@@ -263,7 +261,6 @@ export function useMcpTool(config: McpToolConfigZod | McpToolConfigJsonSchema): 
     config.name,
     config.description,
     inputFingerprint,
-    outputFingerprint,
     annotationsFingerprint,
     titleFingerprint,
     exposedToFingerprint,
