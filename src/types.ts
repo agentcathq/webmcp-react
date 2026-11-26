@@ -229,6 +229,12 @@ export interface ModelContext extends EventTarget {
     inputArguments?: string | object,
     options?: ExecuteToolOptions,
   ): Promise<string | null>;
+  /**
+   * Tells browser agents the page is still registering tools, so they wait until
+   * every promise passed here settles (or a browser timeout, 10 seconds in Chrome)
+   * before reading them (Chrome 160.0.8185.0+).
+   */
+  waitForToolsUntil?(promise: Promise<unknown>): void;
   ontoolchange: ((this: ModelContext, ev: Event) => unknown) | null;
   ontoolactivated: ((this: ModelContext, ev: ToolActivatedEvent) => unknown) | null;
   ontoolcancel: ((this: ModelContext, ev: ToolCancelEvent) => unknown) | null;

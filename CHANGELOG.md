@@ -32,6 +32,13 @@ All notable changes to `webmcp-react` are documented here. The format is based o
   `Tool` interface objects from `getTools()`. The type gains `source?: Window | null`, and
   the polyfill returns both `source` and `window`.
 
+- **`waitForToolsUntil()` support.** Chrome 160.0.8185.0 adds
+  `document.modelContext.waitForToolsUntil(promise)` (WebMCP PR #373), which tells browser
+  agents to wait for the page's tools. `useMcpTool` passes each registration's promise to
+  it when the browser has it, so agents don't read a half-updated set while tools are
+  swapped. `ModelContext` declares the optional method, and the polyfill implements it as a
+  no-op.
+
 ### Deprecated
 
 - **`RegisteredTool.window`.** Read `tool.source ?? tool.window` until Chrome 160 is the

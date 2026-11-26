@@ -84,6 +84,20 @@ class PolyfillModelContext extends EventTarget {
     return runTool(registered, input, options?.signal);
   }
 
+  /**
+   * Accepted so pages can call it unconditionally. No agent reads the polyfill's
+   * tools ready state, so the promise only gets a rejection handler, as it would
+   * from the browser.
+   */
+  waitForToolsUntil(promise: Promise<unknown>): void {
+    if (arguments.length === 0) {
+      throw new TypeError(
+        "Failed to execute 'waitForToolsUntil' on 'ModelContext': 1 argument required, but only 0 present.",
+      );
+    }
+    Promise.resolve(promise).catch(() => undefined);
+  }
+
   get ontoolchange(): ((ev: Event) => unknown) | null {
     return this.#ontoolchange;
   }

@@ -237,6 +237,13 @@ export function useMcpTool(config: McpToolConfigZod | McpToolConfigJsonSchema): 
       });
       if (result && typeof (result as { then?: unknown }).then === "function") {
         (result as Promise<unknown>).catch(handleRegistrationError);
+        // Agents wait for the registration to settle before reading tools
+        // (Chrome 160.0.8185.0+). A failure here never fails the registration.
+        try {
+          mc.waitForToolsUntil?.(result as Promise<unknown>);
+        } catch {
+          // Ignored: readiness is a hint to agents.
+        }
       }
     } catch (thrown) {
       handleRegistrationError(thrown);

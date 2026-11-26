@@ -32,6 +32,8 @@ const { available } = useWebMCPStatus();
 
 Registers a tool on `document.modelContext`. Automatically unregisters on unmount (via `AbortSignal` — there is no `unregisterTool`).
 
+Where the browser supports `document.modelContext.waitForToolsUntil()` (Chrome 160.0.8185.0+), each registration's promise is passed to it, so browser agents wait for it to settle before reading the page's tools. This covers tools swapped as routes mount and unmount. On first page load, React registers tools in effects, which can run after the point where agents stop waiting; see [WebMCP issue #328](https://github.com/webmachinelearning/webmcp/issues/328).
+
 ### Zod config
 
 | Field         | Type                            | Description                                                    |
@@ -133,6 +135,9 @@ When native WebMCP is unavailable, the provider installs a polyfill that exposes
   `getTools()` runs only the registration it describes: once that tool is unregistered,
   `executeTool` rejects with `UnknownError`, even if a tool with the same name has been
   registered since. Other objects are still looked up by `name` in 1.x.
+- `document.modelContext.waitForToolsUntil(promise)` — accepted so pages can call it
+  unconditionally. No agent reads the polyfill's readiness, so it only marks the promise's
+  rejection as handled; calling it without an argument throws `TypeError`.
 - `navigator.modelContextTesting` — **deprecated** wrapper over the same engine
   (`listTools()` keeps returning a JSON-string `inputSchema`); removed in 2.0.0.
 
@@ -144,7 +149,7 @@ When native WebMCP is unavailable, the provider installs a polyfill that exposes
 | 155 | `executeTool` takes object inputs instead of JSON strings (155.0.8052.0+) |
 | 156 | `toolactivated` and `toolcancel` fire on `document.modelContext` instead of `window` (156.0.8076.0+) |
 | 159 | `registerTool` accepts an `outputSchema`, and `getTools()` returns it (159.0.8140.0+) |
-| 160 | `getTools()` returns `Tool` interface objects: `window` is renamed `source`, missing schemas and annotations are `null`, and `executeTool` runs only the registration a `Tool` describes (160.0.8173.0+) |
+| 160 | `getTools()` returns `Tool` interface objects: `window` is renamed `source`, missing schemas and annotations are `null`, and `executeTool` runs only the registration a `Tool` describes (160.0.8173.0+); `waitForToolsUntil(promise)` (160.0.8185.0+) |
 
 On Chrome 160+, read a tool's fields directly (`tool.name`, `tool.inputSchema`, and so on).
 Spreading a `Tool` or passing it to `JSON.stringify` yields no fields, and `structuredClone`

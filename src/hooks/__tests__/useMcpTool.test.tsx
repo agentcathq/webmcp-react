@@ -1951,3 +1951,72 @@ describe("execution signal", () => {
     expect(getByTestId("error").textContent).toBe("genuine failure");
   });
 });
+
+// ─── waitForToolsUntil (Chrome 160.0.8185.0+) ────────────────────
+
+describe("waitForToolsUntil (Chrome 160.0.8185.0+)", () => {
+  function installNative(waitForToolsUntil: (promise: Promise<unknown>) => void) {
+    const registrations: Promise<undefined>[] = [];
+    const native = {
+      registerTool: () => {
+        const registration = Promise.resolve(undefined);
+        registrations.push(registration);
+        return registration;
+      },
+      waitForToolsUntil,
+    };
+    Object.defineProperty(document, "modelContext", {
+      value: native,
+      configurable: true,
+      enumerable: true,
+      writable: true,
+    });
+    return registrations;
+  }
+
+  afterEach(() => {
+    if (Object.getOwnPropertyDescriptor(document, "modelContext")) {
+      delete document.modelContext;
+    }
+  });
+
+  it("passes each registerTool promise to waitForToolsUntil", async () => {
+    const waitForToolsUntil = vi.fn();
+    const registrations = installNative(waitForToolsUntil);
+
+    renderWithProvider(
+      <>
+        <ToolComponent config={{ name: "a", description: "d", handler: async () => OK_RESULT }} />
+        <ToolComponent config={{ name: "b", description: "d", handler: async () => OK_RESULT }} />
+      </>,
+    );
+    await act(async () => {});
+
+    // The provider becoming available re-registers each tool, so count every call.
+    expect(registrations.length).toBeGreaterThanOrEqual(2);
+    expect(waitForToolsUntil).toHaveBeenCalledTimes(registrations.length);
+    for (const [index, registration] of registrations.entries()) {
+      expect(waitForToolsUntil.mock.calls[index][0]).toBe(registration);
+    }
+  });
+
+  it("ignores a throwing waitForToolsUntil without failing the registration", async () => {
+    const registrations = installNative(() => {
+      throw new Error("not ready");
+    });
+    const onError = vi.fn();
+    const onState = vi.fn<(state: ReturnType<typeof useMcpTool>["state"]) => void>();
+
+    renderWithProvider(
+      <ToolComponent
+        config={{ name: "a", description: "d", onError, handler: async () => OK_RESULT }}
+        onState={onState}
+      />,
+    );
+    await act(async () => {});
+
+    expect(registrations.length).toBeGreaterThanOrEqual(1);
+    expect(onError).not.toHaveBeenCalled();
+    expect(onState.mock.calls.at(-1)?.[0].error).toBeNull();
+  });
+});

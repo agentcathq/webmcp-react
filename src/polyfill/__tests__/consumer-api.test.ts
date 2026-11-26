@@ -319,3 +319,34 @@ describe("document.modelContext.executeTool (polyfill)", () => {
     expect((await mc().getTools()).map((t) => t.name)).not.toContain("consumer_tool");
   });
 });
+
+describe("document.modelContext.waitForToolsUntil (polyfill)", () => {
+  function waitForToolsUntil(): (promise: Promise<unknown>) => void {
+    const fn = mc().waitForToolsUntil;
+    if (!fn) throw new Error("waitForToolsUntil missing");
+    return fn;
+  }
+
+  it("accepts a promise and returns undefined", async () => {
+    installPolyfill();
+    expect(waitForToolsUntil().call(mc(), Promise.resolve())).toBeUndefined();
+  });
+
+  it("handles a rejected promise so it is not reported as unhandled", async () => {
+    installPolyfill();
+    const onUnhandled = vi.fn();
+    process.on("unhandledRejection", onUnhandled);
+    try {
+      waitForToolsUntil().call(mc(), Promise.reject(new Error("registration failed")));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(onUnhandled).not.toHaveBeenCalled();
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
+  });
+
+  it("throws TypeError when called without a promise", () => {
+    installPolyfill();
+    expect(() => Reflect.apply(waitForToolsUntil(), mc(), [])).toThrow(TypeError);
+  });
+});
